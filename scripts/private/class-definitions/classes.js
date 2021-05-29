@@ -98,7 +98,7 @@ if (typeof window == 'undefined') {
                 simulation.Simulation.Run(simulation.Accuracy, simulation.Headshot).then(() => {
                     //When it finishes, lower the thread count, and queue up the next simulation
                     MAIN.CurrentThreads--;
-                    superconsole.log(superconsole.MessageLevel.INFORMATION, `$blue:Threads: $white,bright{${MAIN.CurrentThreads}}`);
+                    superconsole.log(superconsole.MessageLevel.INFORMATION, `$blue:Threads: $white,bright{${MAIN.CurrentThreads}}`)
                     MAIN.RunNextSimulation();
                 });
             });

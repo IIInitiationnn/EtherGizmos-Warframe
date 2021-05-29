@@ -114,7 +114,7 @@ function OnConnect(ws) {
         }
 
         //Queue a simulation with the filled message handler (filled below this function)
-        simulationController.QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, enemy4, type, accuracy, headshot, request.AdditionalSettingsVariables);
+        simulationController.QueueSimulation(messageHandler, weapon, [enemy1, enemy2, enemy3, enemy4], type !== 'Random', accuracy, headshot, request.AdditionalSettingsVariables);
         //If not a ranked simulation, queue one up and run it as well
         if (type != 'Ranked') {
             //Worth noting an empty message handler is used; client does not need info on this one
@@ -124,7 +124,7 @@ function OnConnect(ws) {
                 .CreateHandle($Classes.Metrics.name, function(obj) {})
                 .CreateHandle($Classes.SimulationError.name, function(obj) {});
 
-            simulationController.QueueSimulation(emptyMessageHandler, weapon, enemy1, enemy2, enemy3, enemy4, 'Ranked', accuracy, headshot, request.AdditionalSettingsVariables);
+            await simulationController.QueueSimulationRanked(emptyMessageHandler, weapon, type !== 'Random', request.AdditionalSettingsVariables);
         }
     }
 

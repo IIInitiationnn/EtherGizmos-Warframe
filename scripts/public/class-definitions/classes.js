@@ -736,6 +736,46 @@ if (typeof window == 'undefined') {
             return weapon;
         }
 
+        static FromJSONObject(object) {
+            let weapon = new this()
+                .SetName(object.Name)
+                .SetImage(object.Image)
+                .SetMastery(object.Mastery)
+                .SetModTypes(object.ModTypes)
+                .SetMagazineSize(object.BaseMagazineSize)
+                .SetMaximumAmmo(object.BaseMaximumAmmo)
+                .SetReloadDuration(object.BaseReloadDuration)
+                .SetAdditionalSettingsHtml(object.AdditionalSettingsHtml);
+
+            for (let f = 0; f < object.FiringModes.length; f++) {
+                let firingMode = object.FiringModes[f];
+                weapon.AddFiringMode(WeaponFiringMode.FromJSONObject(firingMode));
+            }
+
+            for (let m = 0; m < object.Mods.length; m++) {
+                let mod = object.Mods[m];
+                weapon.SetMod(m, (mod !== undefined ? Mod.FromObject(mod) : null));
+            }
+
+            if (object.FiringModeName !== undefined) {
+                for (let f = 0; f < object.FiringModes.length; f++) {
+                    let firingMode = object.FiringModes[f];
+                    if (firingMode.Name === object.FiringModeName) {
+                        weapon.SetFiringMode(f);
+                    }
+                }
+            } else {
+                //Need to load firing mode
+                weapon.SetFiringMode(0);
+            }
+
+            if (object.RelativeBaseDamageData !== undefined) {
+                weapon.AddRelativeBaseDamage(object.RelativeBaseDamageData.Type, object.RelativeBaseDamageData.Proportion);
+            }
+
+            return weapon;
+        }
+
         SetName(name) {
             this.Name = name;
             return this;
@@ -1750,12 +1790,46 @@ if (typeof window == 'undefined') {
             return data;
         }
 
+        static FromJSONObject(object) {
+            let originalBaseDamage = object.OriginalBaseDamage;
+            let firingMode = new this()
+                .SetName(object.Name)
+                .SetDamageImpact(originalBaseDamage[DamageType.IMPACT])
+                .SetDamagePuncture(originalBaseDamage[DamageType.PUNCTURE])
+                .SetDamageSlash(originalBaseDamage[DamageType.SLASH])
+                .SetDamageCold(originalBaseDamage[DamageType.COLD])
+                .SetDamageElectric(originalBaseDamage[DamageType.ELECTRIC])
+                .SetDamageHeat(originalBaseDamage[DamageType.HEAT])
+                .SetDamageToxin(originalBaseDamage[DamageType.TOXIN])
+                .SetDamageBlast(originalBaseDamage[DamageType.BLAST])
+                .SetDamageCorrosive(originalBaseDamage[DamageType.CORROSIVE])
+                .SetDamageGas(originalBaseDamage[DamageType.GAS])
+                .SetDamageMagnetic(originalBaseDamage[DamageType.MAGNETIC])
+                .SetDamageRadiation(originalBaseDamage[DamageType.RADIATION])
+                .SetDamageViral(originalBaseDamage[DamageType.VIRAL])
+                .SetPellets(object.Pellets)
+                .SetFireRate(object.FireRate)
+                .SetCriticalChance(object.CriticalChance)
+                .SetCriticalMultiplier(object.CriticalMultiplier)
+                .SetStatusChance(object.StatusChance)
+                .SetAmmoConsumption(object.AmmoConsumption)
+                .SetIsBeam(object.IsBeam)
+                .SetChargeDelay(object.ChargeDelay);
+
+            for (let r = 0; r < object.Residuals.length; r++) {
+                let residual = WeaponFiringModeResidual.FromJSONObject(object.Residuals[r]);
+                firingMode.AddResidual(residual);
+            }
+
+            return firingMode;
+        }
+
         /**
          * 
          * @param {WeaponFiringMode} object 
          */
         static FromObject(object) {
-            var firingMode = new this()
+            let firingMode = new this()
                 .SetName(object.Name)
                 .SetDamageImpact(object.DamageImpact)
                 .SetDamagePuncture(object.DamagePuncture)
@@ -2062,6 +2136,31 @@ if (typeof window == 'undefined') {
                 .SetOverrideCriticalMultiplier(object.OverrideCriticalMultiplier)
                 .SetOverrideStatusChance(object.OverrideStatusChance);
 
+            return residual;
+        }
+
+        static FromJSONObject(object) {
+            let originalBaseDamage = object.OriginalBaseDamage;
+            let residual = new this()
+                .SetDamageImpact(originalBaseDamage[DamageType.IMPACT])
+                .SetDamagePuncture(originalBaseDamage[DamageType.PUNCTURE])
+                .SetDamageSlash(originalBaseDamage[DamageType.SLASH])
+                .SetDamageCold(originalBaseDamage[DamageType.COLD])
+                .SetDamageElectric(originalBaseDamage[DamageType.ELECTRIC])
+                .SetDamageHeat(originalBaseDamage[DamageType.HEAT])
+                .SetDamageToxin(originalBaseDamage[DamageType.TOXIN])
+                .SetDamageBlast(originalBaseDamage[DamageType.BLAST])
+                .SetDamageCorrosive(originalBaseDamage[DamageType.CORROSIVE])
+                .SetDamageGas(originalBaseDamage[DamageType.GAS])
+                .SetDamageMagnetic(originalBaseDamage[DamageType.MAGNETIC])
+                .SetDamageRadiation(originalBaseDamage[DamageType.RADIATION])
+                .SetDamageViral(originalBaseDamage[DamageType.VIRAL])
+                .SetDuration(object.Duration)
+                .SetPellets(object.Pellets)
+                .SetInheritCriticalChance(object.InheritCriticalChance)
+                .SetOverrideCriticalChance(object.OverrideCriticalChance)
+                .SetOverrideCriticalMultiplier(object.OverrideCriticalMultiplier)
+                .SetOverrideStatusChance(object.OverrideStatusChance);
             return residual;
         }
 
@@ -2730,7 +2829,7 @@ if (typeof window == 'undefined') {
         }
 
         ToObject() {
-            var data = {
+            return {
                 Name: this.Name,
                 BaseLevel: this.BaseLevel,
                 Level: this.Level,
@@ -2741,13 +2840,11 @@ if (typeof window == 'undefined') {
                 HealthType: this.HealthTypeId,
                 BaseHealth: this.BaseHealth,
                 Image: this.Image
-            }
-
-            return data;
+            };
         }
 
         static FromObject(object) {
-            var enemy = new this()
+            return new this()
                 .SetName(object.Name)
                 .SetBaseLevel(object.BaseLevel)
                 .SetLevel(object.Level)
@@ -2758,8 +2855,20 @@ if (typeof window == 'undefined') {
                 .SetHealthType(object.HealthType)
                 .SetHealth(object.BaseHealth)
                 .SetImage(object.Image);
+        }
 
-            return enemy;
+        static FromJSONObject(object) {
+            return new this()
+                .SetName(object.Name)
+                .SetBaseLevel(object.BaseLevel)
+                .SetLevel(object.Level)
+                .SetShieldType(object.ShieldTypeId)
+                .SetShield(object.BaseShield)
+                .SetArmorType(object.ArmorTypeId)
+                .SetArmor(object.BaseArmor)
+                .SetHealthType(object.HealthTypeId)
+                .SetHealth(object.BaseHealth)
+                .SetImage(object.Image);
         }
 
         SetName(name) {

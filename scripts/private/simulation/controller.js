@@ -15,45 +15,60 @@ var Simulator = new $ClassesPriv.Simulator(MaxThreads);
  * Ultimately, this probably needs doing-away with eventually.
  * @param {import('../../public/class-definitions/classes').EncodedMessageHandler} messageHandler 
  * @param {import('../../public/class-definitions/classes').Weapon} weapon 
- * @param {import('../../public/class-definitions/classes').Enemy} enemy1 
- * @param {import('../../public/class-definitions/classes').Enemy} enemy2 
- * @param {import('../../public/class-definitions/classes').Enemy} enemy3 
- * @param {import('../../public/class-definitions/classes').Enemy} enemy4 
+ * @param {[import('../../public/class-definitions/classes').Enemy]} enemies
  * @param {string} simulationType 
  * @param {number} accuracy 
  * @param {number} headshot 
  * @param {{}} additionalSettingsVariables 
  */
-async function QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, enemy4, simulationType, accuracy, headshot, additionalSettingsVariables) {
+
+/**
+ * Queues up a ranked simulation; acts as a wrapper over the basic simulation queueing; intended to identify which simulation is which.
+ *
+ * Ultimately, this probably needs doing-away with eventually.
+ * @param {import('../../public/class-definitions/classes').EncodedMessageHandler} messageHandler
+ * @param {import('../../public/class-definitions/classes').Weapon} weapon
+ * @param {boolean} isNormalized
+ * @param {{}} additionalSettingsVariables
+ */
+async function QueueSimulationRanked(messageHandler, weapon, isNormalized, additionalSettingsVariables) {
+    //If it's ranked, ensure all of the correct enemies, levels, and settings are set
+    var simulationData = require('../data/simulation');
+
+    let enemy1 = await simulationData.GetEnemyById('corrupted-heavy-gunner');
+    enemy1.SetLevel(100);
+
+    let enemy2 = await simulationData.GetEnemyById('bombard');
+    enemy2.SetLevel(100);
+
+    let enemy3 = await simulationData.GetEnemyById('corpus-tech');
+    enemy3.SetLevel(100);
+
+    let enemy4 = await simulationData.GetEnemyById('ancient-healer');
+    enemy4.SetLevel(100);
+
+    QueueSimulation(messageHandler, weapon, [enemy1, enemy2, enemy3, enemy4], isNormalized, 0.9, 0.5, additionalSettingsVariables);
+}
+module.exports.QueueSimulationRanked = QueueSimulationRanked;
+
+/**
+ * Queues up a simulation; acts as a wrapper over the basic simulation queueing; intended to identify which simulation is which. *
+ *
+ * Ultimately, this probably needs doing-away with eventually.
+ * @param {import('../../public/class-definitions/classes').EncodedMessageHandler} messageHandler
+ * @param {import('../../public/class-definitions/classes').Weapon} weapon
+ * @param {[import('../../public/class-definitions/classes').Enemy]} enemies
+ * @param {boolean} isNormalized
+ * @param {number} accuracy
+ * @param {number} headshot
+ * @param {{}} additionalSettingsVariables
+ */
+function QueueSimulation(messageHandler, weapon, enemies, isNormalized, accuracy, headshot, additionalSettingsVariables) {
     //When the request was created
     var requestTime = new Date();
 
-    //Enemies to simulate
-    var enemies = [ enemy1, enemy2, enemy3, enemy4 ];
     //Keep track of progress
     var statuses = [];
-    //Whether the simulation is normalized
-    var normalized = simulationType == 'Random' ? false : true;
-
-    //If it's ranked, ensure all of the correct enemies, levels, and settings are set
-    if (simulationType == 'Ranked') {
-        var simulationData = require('../data/simulation');
-
-        enemies[0] = await simulationData.GetEnemyById('corrupted-heavy-gunner');
-        enemies[0].SetLevel(100);
-        
-        enemies[1] = await simulationData.GetEnemyById('bombard');
-        enemies[1].SetLevel(100);
-        
-        enemies[2] = await simulationData.GetEnemyById('corpus-tech');
-        enemies[2].SetLevel(100);
-        
-        enemies[3] = await simulationData.GetEnemyById('ancient-healer');
-        enemies[3].SetLevel(100);
-
-        accuracy = 0.9;
-        headshot = 0.5;
-    }
 
     //Keep track of additional settings variables
     var additionalSettingsVariablesToStore = '';
@@ -62,10 +77,10 @@ async function QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, e
         for (var a = 0; a < additionalSettingsVariablesKeys.length; a++)
         {
             var key = additionalSettingsVariablesKeys[a];
-            additionalSettingsVariablesToStore += `${(additionalSettingsVariablesToStore != '' ? ';' : '')}${key}:${additionalSettingsVariables[key]}`;
+            additionalSettingsVariablesToStore += `${(additionalSettingsVariablesToStore !== '' ? ';' : '')}${key}:${additionalSettingsVariables[key]}`;
         }
     }
-    if (additionalSettingsVariablesToStore == '') {
+    if (additionalSettingsVariablesToStore === '') {
         additionalSettingsVariablesToStore = null;
     }
 
@@ -139,7 +154,7 @@ async function QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, e
                 messageHandler.DoHandle(message);
 
                 //All the below functions store the results in the database
-                function $_doInsertSimulationModGroup(stack) {
+                /*function $_doInsertSimulationModGroup(stack) {
                     Sql.query(
                         `CALL CreateSimulationModGroup( ?, ?, ?, ?, ?, ?, ?, ?, @L_Output );`,
                         [
@@ -246,7 +261,7 @@ async function QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, e
                                                     `CALL CreateSimulationGroup( ?, ?, ?, ?, ?, ?, ?, @L_Output )`,
                                                     [
                                                         requestTime,
-                                                        normalized,
+                                                        isNormalized,
                                                         simulationType == 'Ranked',
                                                         simulationRunIds[0],
                                                         simulationRunIds[1],
@@ -279,7 +294,7 @@ async function QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, e
                         }
                     );
                 }
-                $_doInsertSimulationModGroup(1);
+                $_doInsertSimulationModGroup(1);*/
             }
 
             /**
@@ -305,7 +320,7 @@ async function QueueSimulation(messageHandler, weapon, enemy1, enemy2, enemy3, e
             enemyMessageHandler.CreateHandle($Classes.SimulationError.name, $_receiveSimulationError);
             
             //Create a simulation, then run it
-            var simulation = Simulator.SpawnSimulation(weapon, enemies[e], normalized, enemyMessageHandler);
+            var simulation = Simulator.SpawnSimulation(weapon, enemies[e], isNormalized, enemyMessageHandler);
             Simulator.QueueSimulation(simulation, accuracy, headshot);
         })(e);
     }
