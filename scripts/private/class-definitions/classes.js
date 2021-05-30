@@ -1,5 +1,6 @@
 const path = require('path');
 const superconsole = require('../../../../../scripts/logging/superconsole');
+const performance = require('perf_hooks').performance;
 
 //Hack to let 'module' exist in front-end
 if (typeof module == 'undefined') {
@@ -53,13 +54,14 @@ if (typeof window == 'undefined') {
          */
         SpawnSimulation(weapon, enemy, normalized, messageHandler) {
             //Create a simulation
-            var simulation = new SimulationMain(weapon, enemy, normalized, messageHandler);
-            return simulation;
+            return new SimulationMain(weapon, enemy, normalized, messageHandler);
         }
 
         /**
          * Queue up a simulation
-         * @param {SimulationMain} simulation 
+         * @param {SimulationMain} simulation
+         * @param accuracy
+         * @param headshot
          */
         QueueSimulation(simulation, accuracy, headshot) {
             //Queue up the simulation
@@ -84,21 +86,21 @@ if (typeof window == 'undefined') {
                     throw new Error('Unable to run another simulation! Maximum of (' + MAIN.CurrentThreads + '/' + MAIN.MaxThreads + ') threads reached!');
 
                 //If the queue is empty, fail out
-                if (MAIN.SimulationQueue.length == 0)
+                if (MAIN.SimulationQueue.length === 0)
                     return;
 
                 //Get the next SimulationMain to be run
-                var simulation = MAIN.SimulationQueue.shift();
+                let simulation = MAIN.SimulationQueue.shift();
 
                 //Up the thread count
                 MAIN.CurrentThreads++;
-                superconsole.log(superconsole.MessageLevel.INFORMATION, `$blue:Threads: $white,bright{${MAIN.CurrentThreads}}`);
+                // TODO superconsole.log(superconsole.MessageLevel.INFORMATION, `$blue:Threads: $white,bright{${MAIN.CurrentThreads}}`);
 
                 //Run the simulation
                 simulation.Simulation.Run(simulation.Accuracy, simulation.Headshot).then(() => {
                     //When it finishes, lower the thread count, and queue up the next simulation
                     MAIN.CurrentThreads--;
-                    superconsole.log(superconsole.MessageLevel.INFORMATION, `$blue:Threads: $white,bright{${MAIN.CurrentThreads}}`)
+                    // TODO superconsole.log(superconsole.MessageLevel.INFORMATION, `$blue:Threads: $white,bright{${MAIN.CurrentThreads}}`)
                     MAIN.RunNextSimulation();
                 });
             });
@@ -149,7 +151,7 @@ if (typeof window == 'undefined') {
             const MAIN = this;
 
             //Set up data to be sent to the thread
-            var data = {
+            let data = {
                 workerData: {
                     Weapon: this.Weapon.ToObject(),
                     Enemy: this.Enemy.ToObject(),
@@ -160,15 +162,15 @@ if (typeof window == 'undefined') {
             }
 
             /** @type {import('../../public/class-definitions/classes').Metrics} */
-            var metrics = undefined;
+            let metrics = undefined;
 
             //It's asynchronous
             return new Promise(function (resolve, reject) {
-                var thisScriptDir = __dirname;
-                var workerPath = path.join(__dirname, '../workers/simulation-runner.js');
+                let thisScriptDir = __dirname;
+                let workerPath = path.join(__dirname, '../workers/simulation-runner.js');
 
                 //Create a worker thread
-                var w = new Worker(workerPath, data);
+                let w = new Worker(workerPath, data);
 
                 //Whenever the main thread receives a message from the worker thread
                 w.on('message', (messageObject) => {
@@ -182,11 +184,11 @@ if (typeof window == 'undefined') {
                     console.error(error);
 
                     //Create error information
-                    var errorObj = new $Classes.SimulationError(MAIN.Enemy)
+                    let errorObj = new $Classes.SimulationError(MAIN.Enemy)
                         .SetError(error);
 
                     //Encode it
-                    var message = new $Classes.EncodedMessage()
+                    let message = new $Classes.EncodedMessage()
                         .Encode(errorObj)
                         .ToObject();
 
@@ -197,10 +199,9 @@ if (typeof window == 'undefined') {
                 //When the thread is terminated
                 w.on('exit', (code) => {
                     //If it errored, log as such
-                    if (code != 0) {
+                    if (code !== 0) {
                         console.error(new Error(`Worker stopped with exit code ${code}`))
                     }
-
                     //Promise finished
                     resolve();
                 });
@@ -244,34 +245,33 @@ if (typeof window == 'undefined') {
 
         /**
          * Run the simulation, in the thread
-         * @param {function} callback 
+         * @param accuracy
+         * @param headshot
          */
         Run(accuracy, headshot) {
             //Fetch local copies of weapon/enemy data
-            var weapon = this.Weapon;
-            var enemy = this.Enemy;
+            let weapon = this.Weapon;
+            let enemy = this.Enemy;
             
             //Create a timer to reside over the simulation
-            var timer = new Timer();
+            let timer = new Timer();
 
             //Create objects to handle runtime instances of static weapon/enemies
-            var runtimeWeapon = new RuntimeWeapon(weapon, timer, this.Events, accuracy, headshot);
-            var runtimeEnemy = new RuntimeEnemy(enemy, timer, this.Events);
+            let runtimeWeapon = new RuntimeWeapon(weapon, timer, this.Events, accuracy, headshot);
+            let runtimeEnemy = new RuntimeEnemy(enemy, timer, this.Events);
 
             //Keep track of shots fired
-            var shotCount = 0;
-
+            let shotCount = 0;
             //Track when the simulation started
-            var initializeTime = new Date();
-
+            let initializeTime = new Date();
             //Loop while enemy is alive, or until 999ks passes in the simulation (a lot of time)
             while (runtimeEnemy.IsAlive && timer.ElapsedTime < MaxSimulationDuration) {
                 //Get the next notable events from each runtime object
-                var timeStepWeapon = runtimeWeapon.NextEventTimeStep;
-                var timeStepEnemy = runtimeEnemy.NextEventTimeStep;
+                let timeStepWeapon = runtimeWeapon.NextEventTimeStep;
+                let timeStepEnemy = runtimeEnemy.NextEventTimeStep;
 
                 //Jump to the earliest notable event
-                var timeStep = Math.min(timeStepWeapon, timeStepEnemy);
+                let timeStep = Math.min(timeStepWeapon, timeStepEnemy);
                 timer.AddTime(timeStep);
 
                 //Handle buffs
@@ -280,29 +280,28 @@ if (typeof window == 'undefined') {
                 //If the weapon can shoot
                 if (runtimeWeapon.CanShoot) {
                     //Shoot the enemy
-                    var [shotRng, identifier] = runtimeWeapon.Shoot(runtimeEnemy, this.RngHandler);
+                    let [shotRng, identifier] = runtimeWeapon.Shoot(runtimeEnemy, this.RngHandler);
                     shotCount++;
 
                     //Keep track of metrics from the shot
-                    var hitCount = 0;
-                    var critCount = {};
-                    var headCount = 0;
-                    var headCritCount = 0;
-                    var procs = [];
+                    let hitCount = 0;
+                    let critCount = {};
+                    let headCount = 0;
+                    let headCritCount = 0;
+                    let procs = [];
 
                     //Loop through each pellet
-                    for (var s = 0; s < shotRng.length; s++)
-                    {
-                        var shot = shotRng[s];
+                    for (let s = 0; s < shotRng.length; s++) {
+                        let shot = shotRng[s];
                         if (shot.Hit) hitCount++;
-                        if (shot.Critical != undefined) critCount[shot.Critical] = (critCount[shot.Critical] || 0) + 1;
+                        if (shot.Critical !== undefined) critCount[shot.Critical] = (critCount[shot.Critical] || 0) + 1;
                         if (shot.Headshot) headCount++;
                         if (shot.Critical && shot.Headshot) headCritCount++;
-                        if (shot.Procs != undefined && shot.Procs.length > 0) {
+                        if (shot.Procs !== undefined && shot.Procs.length > 0) {
                             procs = procs.concat(shot.Procs);
                         }
-                        if (shot.Residuals != undefined && shot.Residuals.length > 0) {
-                            for (var r = 0; r < shot.Residuals.length; r++)
+                        if (shot.Residuals !== undefined && shot.Residuals.length > 0) {
+                            for (let r = 0; r < shot.Residuals.length; r++)
                             {
                                 procs = procs.concat(shot.Residuals[r].Procs);
                             }
@@ -319,7 +318,7 @@ if (typeof window == 'undefined') {
                         Procs: procs,
                         Time: timer.ElapsedTime
                     });
-                    
+
                 } else {
                     //It can't shoot, so do actions such as waiting between shots or reloading
                     runtimeWeapon.PrepareForShot(timeStep);
@@ -336,7 +335,7 @@ if (typeof window == 'undefined') {
                     initializeTime = new Date();
 
                     //Note progress and pass along the 'progress' event
-                    var progress = 1 - runtimeEnemy.CurrentHealth / enemy.Health;
+                    let progress = 1 - runtimeEnemy.CurrentHealth / enemy.Health;
                     this.Events['progress'](progress);
 
                     //Terminate the loop
@@ -383,6 +382,10 @@ if (typeof window == 'undefined') {
         /**
          * @constructor
          * @param {import('../../public/class-definitions/classes').Weapon} weapon - Base Weapon being simulated
+         * @param timer
+         * @param events
+         * @param accuracy
+         * @param headshot
          */
         constructor(weapon, timer, events, accuracy, headshot) {
             /** @type {import('../../public/class-definitions/classes').Weapon} - Base Weapon being simulated */
@@ -429,40 +432,47 @@ if (typeof window == 'undefined') {
 
         /**
          * Shoot an enemy with the current weapon
-         * @param {RuntimeEnemy} enemy - Enemy to shoot with the current weapon 
+         * @param {RuntimeEnemy} enemy - Enemy to shoot with the current weapon
+         * @param rngHandler
          */
         Shoot(enemy, rngHandler) {
             const MAIN = this;
-            var weapon = this.Weapon;
+            let weapon = this.Weapon;
 
             //Get an identifier for the shot
-            var identifier = (this.$_ShotId)++;
+            let identifier = (this.$_ShotId)++;
 
+            let a = -performance.now()
             //Handle rng that will be used for the shot
-            var rng = this.DoShotRng(rngHandler);
+            let rng = this.DoShotRng(rngHandler);
+            a += performance.now()
 
             //Tracks whether any shots hit or not; some buffs are removed if no pellets hit the enemy
-            var anyHit = false;
+            let anyHit = false;
+
+            let b = -performance.now()
+            let pelletFactionMultiplier = (this.Weapon.MaxFactionDamageMultiplier);
+            let isLatronActive = this.Weapon.AugmentLatronNextShotBonus > 0;
+            let isSomaPrimeActive = this.Weapon.AugmentSomaPrimeHitCriticalChance > 0;
+            let otherDamageMultipliers = $_GetOtherMultipliersFromWeapon(this.Weapon);
 
             //Loop through each pellet's rng
-            for (var p = 0; p < rng.length; p++)
-            {
+            for (let p = 0; p < rng.length; p++) {
                 //Get the rng
-                var pelletRng = rng[p];
+                let pelletRng = rng[p];
                 anyHit = anyHit || pelletRng.Hit;
 
                 //If the pellet hits
                 if (pelletRng.Hit) {
                     //Get damage multipliers
-                    var pelletCriticalMultiplier = (pelletRng.Critical * this.Weapon.CriticalMultiplier - (pelletRng.Critical - 1));
-                    var pelletHeadshotMultiplier = (pelletRng.Headshot ? this.Weapon.HeadshotMultiplier * 2 : this.Weapon.BodyshotMultiplier);
-                    var pelletHeadCritMultiplier = (pelletRng.Critical && pelletRng.Headshot ? 2 : 1);
-                    var pelletFactionMultiplier = (this.Weapon.MaxFactionDamageMultiplier);
+                    let pelletCriticalMultiplier = (pelletRng.Critical * this.Weapon.CriticalMultiplier - (pelletRng.Critical - 1));
+                    let pelletHeadshotMultiplier = (pelletRng.Headshot ? this.Weapon.HeadshotMultiplier * 2 : this.Weapon.BodyshotMultiplier);
+                    let pelletHeadCritMultiplier = (pelletRng.Critical && pelletRng.Headshot ? 2 : 1);
 
                     //If the Latron mod effect is in effect
-                    if (this.Weapon.AugmentLatronNextShotBonus > 0) {
+                    if (isLatronActive) {
                         //Add its relevant buff
-                        var latronNextShotBonusBuff = new $Classes.Buff(MAIN.Timer, 2)
+                        let latronNextShotBonusBuff = new $Classes.Buff(MAIN.Timer, 2)
                             .SetName($Classes.BuffNames.LATRON_NEXT_SHOT_BONUS)
                             .SetCanRefresh(true)
                             .SetMaxStacks(20)
@@ -473,9 +483,9 @@ if (typeof window == 'undefined') {
                     }
 
                     //If the Soma Prime mod effect is in effect
-                    if (this.Weapon.AugmentSomaPrimeHitCriticalChance > 0) {
+                    if (isSomaPrimeActive) {
                         //Add its relevant buff
-                        var somaPrimeHitCriticalChanceBuff = new $Classes.Buff()
+                        let somaPrimeHitCriticalChanceBuff = new $Classes.Buff()
                             .SetName($Classes.BuffNames.SOMA_PRIME_HIT_CRITICAL)
                             .SetCanRefresh(true)
                             .SetMaxBonus(5)
@@ -484,9 +494,6 @@ if (typeof window == 'undefined') {
 
                         this.Weapon.AddBuff(somaPrimeHitCriticalChanceBuff);
                     }
-
-                    //Get various other damage multipliers
-                    var otherDamageMultipliers = $_GetOtherMultipliersFromWeapon(this.Weapon);
 
                     //Deal damage to the enemy
                     enemy.DealDamage(
@@ -502,10 +509,9 @@ if (typeof window == 'undefined') {
                     );
 
                     //Loop through proc types
-                    for (var s = 0; s < pelletRng.Procs.length; s++)
-                    {
+                    for (let s = 0; s < pelletRng.Procs.length; s++) {
                         //Create a proc for the proc type, and apply it to the enemy
-                        var proc = new Proc(
+                        let proc = new Proc(
                             parseInt(pelletRng.Procs[s]),
                             this.Weapon,
                             {
@@ -523,15 +529,13 @@ if (typeof window == 'undefined') {
                     }
 
                     //Loop through residuals as well
-                    for (var r = 0; r < weapon.Residuals.length; r++)
-                    {
-                        var residual = weapon.Residuals[r];
+                    for (let r = 0; r < weapon.Residuals.length; r++) {
+                        let residual = weapon.Residuals[r];
 
                         //For each pellet of the residual (typically 1, but some cluster explosions are more than 1)
-                        for (var rp = 0; rp < residual.Pellets; rp++)
-                        {
+                        for (let rp = 0; rp < residual.Pellets; rp++) {
                             //Create a residual instance
-                            var instance = residual.Instantiate(WeaponFiringModeResidualInstance, identifier, this.Timer, pelletCriticalMultiplier);
+                            let instance = residual.Instantiate(WeaponFiringModeResidualInstance, identifier, this.Timer, pelletCriticalMultiplier);
 
                             //Residual ticks immediately, so it gets put at the start of the residuals array
                             this.ResidualInstances.unshift(instance);
@@ -539,12 +543,11 @@ if (typeof window == 'undefined') {
                     }
                 }
             }
+            b += performance.now()
 
+            let c = -performance.now()
             //If the Convectric augment is in effect and the enemy wasn't hit, don't consume ammo
-            var canConsumeAmmo = true;
-            if (this.Weapon.AugmentConvectrixEfficiency > 0 && !anyHit) {
-                canConsumeAmmo = false;
-            }
+            let canConsumeAmmo = !(this.Weapon.AugmentConvectrixEfficiency > 0 && !anyHit)
 
             //If ammo can be consumed, consume it
             if (rng.ConsumeAmmo && canConsumeAmmo) {
@@ -564,7 +567,9 @@ if (typeof window == 'undefined') {
             if (!anyHit) {
                 this.Weapon.RemoveBuff($Classes.BuffNames.LATRON_NEXT_SHOT_BONUS);
             }
+            c += performance.now()
 
+            //console.log(a*1000,b*1000,c*1000)
             //Return shot information
             return [rng, identifier];
         }
@@ -577,7 +582,7 @@ if (typeof window == 'undefined') {
             //If reloading
             if (this.RemainingReloadDuration > 0) {
                 //Break apart the time step to ensure it doesn't overflow the time remaining to reload
-                var timeStepActual = Math.min(timeStep, this.RemainingReloadDuration);
+                let timeStepActual = Math.min(timeStep, this.RemainingReloadDuration);
                 this.RemainingReloadDuration -= timeStepActual;
 
                 //If reload time is finished, refill magazine
@@ -596,7 +601,7 @@ if (typeof window == 'undefined') {
             //If waiting for the next shot
             if (this.CurrentShotDelay > 0) {
                 //Break apart the time step to ensure it doesn't overflow the time waiting to shoot
-                var timeStepActual = Math.min(timeStep, this.CurrentShotDelay);
+                let timeStepActual = Math.min(timeStep, this.CurrentShotDelay);
                 this.CurrentShotDelay -= timeStepActual;
 
                 //Remove the consumed time step
@@ -608,13 +613,11 @@ if (typeof window == 'undefined') {
             //If waiting for the weapon to charge
             if (this.CurrentChargeDelay > 0) {
                 //Break apart the time step to ensure it doesn't overflow the time remaining to charge
-                var timeStepActual = Math.min(timeStep, this.CurrentChargeDelay);
+                let timeStepActual = Math.min(timeStep, this.CurrentChargeDelay);
                 this.CurrentChargeDelay -= timeStepActual;
 
                 //Remove the consumed time step
                 timeStep -= timeStepActual;
-                if (timeStep <= 0)
-                    return;
             }
         }
 
@@ -625,39 +628,48 @@ if (typeof window == 'undefined') {
          */
         DoShotRng(rngHandler) {
             /** @type {object} */
-            var rngResult = [];
+            let a = -performance.now()
+            let rngResult = [];
 
             //Whether ammo is consumed
             rngResult.ConsumeAmmo = false;
 
             //Get the chance of an extra pellet
-            var pelletChance = this.Weapon.Pellets - Math.floor(this.Weapon.Pellets);
+            let pelletChance = this.Weapon.Pellets - Math.floor(this.Weapon.Pellets);
             //Get the chance of not consuming ammo
-            var consumptionChanceNumber = this.Weapon.AmmoEfficiency;
+            let consumptionChanceNumber = this.Weapon.AmmoEfficiency;
             //Get critical chance
-            var critChance = this.Weapon.CriticalChance - Math.floor(this.Weapon.CriticalChance);
+            let critChance = this.Weapon.CriticalChance - Math.floor(this.Weapon.CriticalChance);
             //Get status chance
-            var statusChance = this.Weapon.StatusChance; // - Math.floor(this.StatusChance);
+            let statusChance = this.Weapon.StatusChance; // - Math.floor(this.StatusChance);
 
             //Do chance for pellets
-            var pelletChance = rngHandler
+            pelletChance = rngHandler
                 .Chance(pelletChance, 'Pellet');
 
             //Do chance for not consuming ammo
-            var consumptionChance = rngHandler
+            let consumptionChance = rngHandler
                 .Chance(consumptionChanceNumber, 'DontConsumeAmmo');
 
             //Determine number of pellets to simulate
-            var pellets = Math.floor(this.Weapon.Pellets) + (pelletChance.Result.Pellet ? 1 : 0);
-            for (var p = 0; p < pellets; p++)
-            {
+            let pellets = Math.floor(this.Weapon.Pellets) + (pelletChance.Result.Pellet ? 1 : 0);
+            a += performance.now()
+
+            let b = -performance.now()
+            let vigilanteChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.VIGILANTE_SET_EFFECT);
+            let hunterChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.HUNTER_MUNITIONS_EFFECT);
+            let internalBleedingChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.INTERNAL_BLEEDING_EFFECT);
+            let lowFireRate = this.Weapon.$_GetModdedProperty($Classes.ModEffect.FIRE_RATE) < 2.5;
+
+            // Base critical level
+            let criticalLevel = Math.floor(this.Weapon.CriticalChance);
+            for (let p = 0; p < pellets; p++) {
                 //Do chance to hit
-                var accuracyChance = rngHandler
+                let accuracyChance = rngHandler
                     .Chance(this.Accuracy, 'Accuracy');
 
                 //If it didn't hit
-                if (!accuracyChance.Result.Accuracy)
-                {
+                if (!accuracyChance.Result.Accuracy) {
                     //Store the dud result
                     rngResult.push({
                         Hit: false,
@@ -672,31 +684,25 @@ if (typeof window == 'undefined') {
                 }
 
                 //If it did hit, get critical and headshot chances
-                var remainChance = rngHandler
+                let remainChance = rngHandler
                     .Chance(critChance, 'Critical')
                     .Chance(this.Headshot, 'Headshot');
 
                 //As well as Vigilante set effect bonuses
-                var vigilanteChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.VIGILANTE_SET_EFFECT);
-                var vigilanteChance = remainChance
+                let vigilanteChance = remainChance
                     .Chance(vigilanteChanceChance, 'VigilanteSetEffect');
 
                 //As well as Hunter Munitions mod effect bonuses
-                var hunterChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.HUNTER_MUNITIONS_EFFECT);
-                var hunterChance = vigilanteChance
+                let hunterChance = vigilanteChance
                     .Chance(hunterChanceChance, 'HunterMunitions');
 
                 //As well as Internal Bleeding mod bonuses
-                var internalBleedingChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.INTERNAL_BLEEDING_EFFECT);
-                if (this.Weapon.$_GetModdedProperty($Classes.ModEffect.FIRE_RATE) < 2.5) {
+                if (lowFireRate) {
                     internalBleedingChanceChance *= 2;
                 }
 
                 //Do procs for this pellet
-                var procs = $_DoProcs(this.Weapon.Damage, statusChance, rngHandler, remainChance, '');
-
-                //Determine base critical level
-                var criticalLevel = Math.floor(this.Weapon.CriticalChance);
+                let procs = $_DoProcs(this.Weapon.Damage, statusChance, rngHandler, remainChance, '');
 
                 //If Hunter Munitions proc'd and the shot was a crit, apply a slash proc
                 if (hunterChance.Result.HunterMunitions && (remainChance.Result.Critical || criticalLevel > 0)) {
@@ -714,9 +720,9 @@ if (typeof window == 'undefined') {
                 }
 
                 //Loop through the procs and roll Internal Bleeding for every impact proc
-                for (var pe = 0; pe < procs.length; pe++) {
-                    if (procs[pe] == $Classes.DamageType.IMPACT) {
-                        var internalBleedingChance = vigilanteChance
+                for (let pe = 0; pe < procs.length; pe++) {
+                    if (procs[pe] === $Classes.DamageType.IMPACT) {
+                        let internalBleedingChance = vigilanteChance
                             .Chance(internalBleedingChanceChance, 'InternalBleeding');
 
                         if (internalBleedingChance.Result.InternalBleeding) {
@@ -734,7 +740,8 @@ if (typeof window == 'undefined') {
                     Procs: procs
                 });
             }
-
+            b += performance.now();
+            //console.log(a*1000, b*1000)
             //Set whether or not ammo is consumed
             rngResult.ConsumeAmmo = !consumptionChance.Result.DontConsumeAmmo;
 
@@ -743,16 +750,17 @@ if (typeof window == 'undefined') {
 
         /**
          * Handles weapon residual effects
-         * @param {RngHandler} rngHandler 
-         * @param {RuntimeEnemy} enemy 
+         * @param {RngHandler} rngHandler
+         * @param {RuntimeEnemy} enemy
+         * @param residualEvent
          */
         DoResiduals(rngHandler, enemy, residualEvent) {
             //If there are no residuals, there's not much to do
-            if (this.ResidualInstances.length == 0)
+            if (this.ResidualInstances.length === 0)
                 return;
 
             /** @type {WeaponFiringModeResidualInstance} */
-            var instance;
+            let instance;
 
             //Loop through residuals, until the first residual in the list isn't ready to tick
             //Since we insert new residuals to the start of the list, and they tick immediately, new ones won't cause problems
@@ -763,26 +771,26 @@ if (typeof window == 'undefined') {
                 instance = this.ResidualInstances.shift();
 
                 //Get the damage it deals
-                var damage = instance.Residual.Damage;
+                let damage = instance.Residual.Damage;
 
                 //See DoShotRng for the logic in this section
 
-                var critChance = this.Weapon.CriticalChance - Math.floor(this.Weapon.CriticalChance);
-                var statusChance = this.Weapon.StatusChance; // - Math.floor(this.StatusChance);
+                let critChance = this.Weapon.CriticalChance - Math.floor(this.Weapon.CriticalChance);
+                let statusChance = this.Weapon.StatusChance; // - Math.floor(this.StatusChance);
 
-                var remainChance = rngHandler
+                let remainChance = rngHandler
                     .Chance(critChance, `Residual${instance.$_Id}Critical`)
                     .Chance(this.Headshot, `Residual${instance.$_Id}Headshot`);
 
-                var vigilanteChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.VIGILANTE_SET_EFFECT);
-                var vigilanteChance = remainChance
+                let vigilanteChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.VIGILANTE_SET_EFFECT);
+                let vigilanteChance = remainChance
                     .Chance(vigilanteChanceChance, `Residual${instance.$_Id}VigilanteSetEffect`);
 
-                var hunterChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.HUNTER_MUNITIONS_EFFECT);
-                var hunterChance = vigilanteChance
+                let hunterChanceChance = this.Weapon.$_GetModdedProperty($Classes.ModEffect.HUNTER_MUNITIONS_EFFECT);
+                let hunterChance = vigilanteChance
                     .Chance(hunterChanceChance, `Residual${instance.$_Id}HunterMunitions`);
 
-                var criticalLevel = Math.floor(this.Weapon.CriticalChance);
+                let criticalLevel = Math.floor(this.Weapon.CriticalChance);
 
                 if (remainChance.Result[`Residual${instance.$_Id}Critical`]) {
                     criticalLevel++;
@@ -792,13 +800,13 @@ if (typeof window == 'undefined') {
                     criticalLevel++;
                 }
 
-                var residualCriticalMultiplier =
+                let residualCriticalMultiplier =
                     instance.Residual.InheritCriticalChance
                         ? instance.OverrideCriticalResult
                         : (instance.Residual.CriticalMultiplier - 1) * criticalLevel + 1;
-                var residualHeadshotMultiplier = 1; //Do bodyshots affect residual damage?
-                var residualHeadCritMultiplier = 1;
-                var residualFactionMultiplier = this.Weapon.MaxFactionDamageMultiplier;
+                let residualHeadshotMultiplier = 1; //Do bodyshots affect residual damage?
+                let residualHeadCritMultiplier = 1;
+                let residualFactionMultiplier = this.Weapon.MaxFactionDamageMultiplier;
 
                 //Deal residual damage
                 enemy.DealDamage(
@@ -813,19 +821,19 @@ if (typeof window == 'undefined') {
                 );
 
                 //Do residual procs
-                var procs = $_DoProcs(instance.Residual.Damage, statusChance, rngHandler, remainChance, `Residual${instance.$_Id}`);
+                let procs = $_DoProcs(instance.Residual.Damage, statusChance, rngHandler, remainChance, `Residual${instance.$_Id}`);
 
                 if (hunterChance.Result[`Residual${instance.$_Id}HunterMunitions`] && (remainChance.Result[`Residual${instance.$_Id}Critical`] || criticalLevel > 0)) {
                     procs.push($Classes.DamageType.SLASH);
                 }
 
-                var otherDamageMultipliers = $_GetOtherMultipliersFromWeapon(this.Weapon);
+                let otherDamageMultipliers = $_GetOtherMultipliersFromWeapon(this.Weapon);
 
                 //Loop through and initialize procs, adding them to the enemy
-                for (var p = 0; p < procs.length; p++)
+                for (let p = 0; p < procs.length; p++)
                 {
-                    var procType = procs[p];
-                    var proc = new Proc(
+                    let procType = procs[p];
+                    let proc = new Proc(
                         parseInt(procType),
                         instance,
                         {
@@ -862,18 +870,18 @@ if (typeof window == 'undefined') {
          */
         DoBuffs() {
             //Get all buff keys
-            var keys = Object.keys(this.Weapon.Buffs);
-            for (var b = 0; b < keys.length; b++) {
-                var key = keys[b];
+            let keys = Object.keys(this.Weapon.Buffs);
+            for (let b = 0; b < keys.length; b++) {
+                let key = keys[b];
                 //Get the buff
-                var buff = this.Weapon.Buffs[key];
+                let buff = this.Weapon.Buffs[key];
 
                 //If the buff doesn't exist, there's nothing to do
-                if (buff == undefined)
+                if (buff === undefined)
                     continue;
 
                 //Check if the buff's lifetime
-                var remainingDuration = buff.RemainingDuration;
+                let remainingDuration = buff.RemainingDuration;
 
                 //If it's dead
                 if (remainingDuration <= 0) {
@@ -929,6 +937,8 @@ if (typeof window == 'undefined') {
         /**
          * @constructor
          * @param {import('../../public/class-definitions/classes').Enemy} enemy - Base enemy being simulated against
+         * @param timer
+         * @param events
          */
         constructor(enemy, timer, events) {
             /** @type {import('../../public/class-definitions/classes').Enemy} - Base enemy being simulated against */
@@ -960,26 +970,27 @@ if (typeof window == 'undefined') {
          * Deal damage to the enemy
          * @param {{[key: number]: number}} damage - Either a weapon damage array or an object containing damage data
          * @param {{ Critical: number, Headshot: number, HeadCrit: number, Faction: number, Other?: [] }} multiplier - Multiply the damage by this amount; intended for crit/faction damage
+         * @param data
          */
         DealDamage(damage, multiplier, data) {
             //Did shield gating trigger
-            var shieldGatingTriggered = false;
+            let shieldGatingTriggered = false;
 
             //Damage dealt
-            var dealtDamageAmount = 0;
+            let dealtDamageAmount = 0;
 
             //Loop through damage
-            var keys = Object.keys(damage);
-            for (var k = 0; k < keys.length; k++)
+            let keys = Object.keys(damage);
+            for (let k = 0; k < keys.length; k++)
             {
                 //Get the damage dealt by this type
-                var damageType = keys[k];
-                var damageAmount = damage[damageType];
+                let damageType = keys[k];
+                let damageAmount = damage[damageType];
 
                 //Get damage multipliers
-                var otherDamageMultiplier = multiplier.Critical * multiplier.Headshot * multiplier.HeadCrit * multiplier.Faction;
+                let otherDamageMultiplier = multiplier.Critical * multiplier.Headshot * multiplier.HeadCrit * multiplier.Faction;
                 if (multiplier.Other) {
-                    for (var o = 0; o < multiplier.Other.length; o++)
+                    for (let o = 0; o < multiplier.Other.length; o++)
                     {
                         otherDamageMultiplier *= multiplier.Other[o];
                     }
@@ -988,14 +999,14 @@ if (typeof window == 'undefined') {
                 //If shields exist
                 if (this.CurrentShield > 0 && damageAmount > 0) {
                     //Get shield resistances
-                    var shieldEffect = this.Enemy.ShieldType[damageType];
-                    var shieldDamageMultiplier = 1 + shieldEffect;
+                    let shieldEffect = this.Enemy.ShieldType[damageType];
+                    let shieldDamageMultiplier = 1 + shieldEffect;
 
                     //Calculate effective damage
                     damageAmount *= shieldDamageMultiplier * otherDamageMultiplier * this.MagneticMultiplier;
 
                     //Ensure the shield isn't overkilled, then damage the shield
-                    var damageAmountNormalized = Math.min(this.CurrentShield, damageAmount);
+                    let damageAmountNormalized = Math.min(this.CurrentShield, damageAmount);
                     this.CurrentShield -= damageAmountNormalized;
 
                     //Remove damage dealt to the shield from the total
@@ -1012,19 +1023,19 @@ if (typeof window == 'undefined') {
                 //TODO: Shields don't cause health damage to be skipped
                 if (this.CurrentHealth > 0 && damageAmount > 0) {
                     //Get health resistances
-                    var healthEffect = this.Enemy.HealthType[damageType];
-                    var healthDamageMultiplier = 1 + healthEffect;
+                    let healthEffect = this.Enemy.HealthType[damageType];
+                    let healthDamageMultiplier = 1 + healthEffect;
                     
                     //Get armor resistances and multipliers
-                    var armorEffect = this.Enemy.ArmorType != undefined ? this.Enemy.ArmorType[damageType] : 0;
-                    var armorAmountMultiplier = 1 - armorEffect;
-                    var armorDamageMultiplier = 1 + armorEffect;
+                    let armorEffect = this.Enemy.ArmorType !== undefined ? this.Enemy.ArmorType[damageType] : 0;
+                    let armorAmountMultiplier = 1 - armorEffect;
+                    let armorDamageMultiplier = 1 + armorEffect;
 
-                    var enemyArmor = this.Enemy.Armor * armorAmountMultiplier;
-                    if (damageType == $Classes.DamageType.TRUE) {
+                    let enemyArmor = this.Enemy.Armor * armorAmountMultiplier;
+                    if (damageType === $Classes.DamageType.TRUE) {
                         enemyArmor = 0;
                     }
-                    var enemyArmorMultiplier = 1 - (enemyArmor / (enemyArmor + 300));
+                    let enemyArmorMultiplier = 1 - (enemyArmor / (enemyArmor + 300));
 
                     //Calculate effective damage
                     damageAmount *= healthDamageMultiplier * armorDamageMultiplier * enemyArmorMultiplier * otherDamageMultiplier * this.ViralMultiplier;
@@ -1035,7 +1046,7 @@ if (typeof window == 'undefined') {
                     }
 
                     //Ensure the health isn't overkilled, then damage the health
-                    var damageAmountNormalized = Math.min(this.CurrentHealth, damageAmount);
+                    let damageAmountNormalized = Math.min(this.CurrentHealth, damageAmount);
                     this.CurrentHealth -= damageAmountNormalized;
                     dealtDamageAmount += damageAmountNormalized;
                 }
@@ -1075,11 +1086,11 @@ if (typeof window == 'undefined') {
          * @param {number} timeStep 
          */
         DoProcs(timeStep) {
-            if (this.Procs.length == 0)
+            if (this.Procs.length === 0)
                 return;
 
             /** @type {Proc} */
-            var proc;
+            let proc;
 
             //Loop through procs that are ready to tick; procs are always in order of soonest to latest to tick
             while (this.Procs.length > 0 && this.Procs[0].NextElapsedTick <= this.Timer.ElapsedTime)
@@ -1090,7 +1101,7 @@ if (typeof window == 'undefined') {
                 if (proc.Damage > 0)
                 {
                     //Get the damage and deal it
-                    var damage = {};
+                    let damage = {};
                     damage[proc.DamageType] = proc.Damage;
                     this.DealDamage(
                         damage,
@@ -1143,8 +1154,8 @@ if (typeof window == 'undefined') {
 
         get CurrentArmor() {
             //Corrosive procs remove 20% + 6% armor per corrosive proc, capping at 80% at 10 stacks
-            var corrProcs = Math.min(this.ProcTypes[$Classes.DamageType.CORROSIVE] || 0, 10);
-            var armorLost = 0;
+            let corrProcs = Math.min(this.ProcTypes[$Classes.DamageType.CORROSIVE] || 0, 10);
+            let armorLost = 0;
             if (corrProcs > 0) {
                 armorLost = 0.2 + 0.06 * corrProcs;
             }
@@ -1154,8 +1165,8 @@ if (typeof window == 'undefined') {
 
         get ViralMultiplier() {
             //Viral multiplies health damage by 175% + 25% per viral proc, capping at 425% at 10 stacks
-            var viralProcs = Math.min(this.ProcTypes[$Classes.DamageType.VIRAL] || 0, 10);
-            var extraDamage = 0;
+            let viralProcs = Math.min(this.ProcTypes[$Classes.DamageType.VIRAL] || 0, 10);
+            let extraDamage = 0;
             if (viralProcs > 0) {
                 extraDamage = 0.75 + 0.25 * viralProcs;
             }
@@ -1165,8 +1176,8 @@ if (typeof window == 'undefined') {
 
         get MagneticMultiplier() {
             //Magnetic multiplies shield damage by 175% + 25% per magnetic proc, capping at 425% at 10 stacks
-            var magProcs = Math.min(this.ProcTypes[$Classes.DamageType.MAGNETIC] || 0, 10);
-            var extraDamage = 0;
+            let magProcs = Math.min(this.ProcTypes[$Classes.DamageType.MAGNETIC] || 0, 10);
+            let extraDamage = 0;
             if (magProcs > 0) {
                 extraDamage = 0.75 + 0.25 * magProcs;
             }
@@ -1183,9 +1194,11 @@ if (typeof window == 'undefined') {
     class Proc {
         /**
          * @constructor
-         * @param {number} damageType 
-         * @param {import('../../public/class-definitions/classes').Weapon | WeaponFiringModeResidualInstance} weaponOrInstance 
-         * @param {{ Critical: number, Headshot: { Active: boolean, Multiplier: number }, Faction: number, Other?: number[] }} properties 
+         * @param {number} damageType
+         * @param {import('../../public/class-definitions/classes').Weapon | WeaponFiringModeResidualInstance} weaponOrInstance
+         * @param {{ Critical: number, Headshot: { Active: boolean, Multiplier: number }, Faction: number, Other?: number[] }} properties
+         * @param timer
+         * @param identifier
          */
         constructor(damageType, weaponOrInstance, properties, timer, identifier) {
             /** @type {number} Damage type identifier being dealt */
@@ -1216,7 +1229,7 @@ if (typeof window == 'undefined') {
             this.Identifier = identifier;
 
             //Argument must be a Weapon or WeaponFiringModeResidualInstance to have all the info needed to create a proc
-            var weapon;
+            let weapon;
             if (typeof(weaponOrInstance) == 'object') {
                 if (weaponOrInstance instanceof $Classes.Weapon) {
                     weapon = weaponOrInstance;
@@ -1315,7 +1328,7 @@ if (typeof window == 'undefined') {
 
             //Apply other multipliers
             if (properties.Other) {
-                for (var m = 0; m < properties.Other.length; m++)
+                for (let m = 0; m < properties.Other.length; m++)
                 {
                     this.Damage *= Math.pow(properties.Other[m], 2);
                 }
@@ -1374,17 +1387,18 @@ if (typeof window == 'undefined') {
          * @param {import('../../public/class-definitions/classes').Weapon} weapon 
          */
         static GenerateWeaponResidualInstanceInstantiator(weapon) {
-            for (var r = 0; r < weapon.Residuals.length; r++)
+            for (let r = 0; r < weapon.Residuals.length; r++)
             {
-                var residual = weapon.Residuals[r];
+                let residual = weapon.Residuals[r];
 
                 /**
-                 * 
-                 * @param {*} critResult 
+                 *
+                 * @param identifier
+                 * @param timer
+                 * @param {*} critResult
                  */
                 function $_generateWeaponResidualInstanceInstantiator(identifier, timer, critResult) {
-                    var instance = new WeaponFiringModeResidualInstance(residual, r, identifier, timer, critResult);
-                    return instance;
+                    return new WeaponFiringModeResidualInstance(residual, r, identifier, timer, critResult);
                 }
 
                 residual.Instantiate = $_generateWeaponResidualInstanceInstantiator;
@@ -1392,12 +1406,12 @@ if (typeof window == 'undefined') {
         }
 
         get BaseDamage() {
-            var MAIN = this;
+            let MAIN = this;
             return $Classes.$_CalculateOrLoadProperty(this, 'BaseDamage', function() {
-                var baseDamage = MAIN.Residual.BaseDamage;
-                var totalBaseDamage = 0;
-                var keys = Object.keys(baseDamage);
-                for (var d = 0; d < keys.length; d++)
+                let baseDamage = MAIN.Residual.BaseDamage;
+                let totalBaseDamage = 0;
+                let keys = Object.keys(baseDamage);
+                for (let d = 0; d < keys.length; d++)
                 {
                     totalBaseDamage += baseDamage[keys[d]];
                 }
@@ -1442,14 +1456,14 @@ if (typeof window == 'undefined') {
             const MAIN = this;
 
             //This will eventually be returned
-            var output = {
-                Result: prevOutput != undefined ? prevOutput.Result : {},
+            let output = {
+                Result: prevOutput !== undefined ? prevOutput.Result : {},
                 Chance: undefined
             };
 
             //Create an identifier from the specified text and the prefix of previous simulations
-            var trueIdentifier = identifier;
-            if (prefix != undefined)
+            let trueIdentifier = identifier;
+            if (prefix !== undefined)
                 trueIdentifier = identifier + ':' + prefix;
 
             //Throw an error if chance is outside the appropriate bounds
@@ -1461,20 +1475,16 @@ if (typeof window == 'undefined') {
 
             //If random, otherwise normalized
             if (!this.Normalized) {
-                //Simulate a random number
-                var rand = Math.random() <= chance;
-
                 //Store the result
-                output.Result[identifier] = rand;
+                output.Result[identifier] = Math.random() <= chance;
                 //Set the Chance function in the output
                 output.Chance = function(chance, identifier) {
-                    var result = MAIN.Chance(chance, identifier, null, output);
-                    return result;
+                    return MAIN.Chance(chance, identifier, null, output);
                 }
                 output.Identifier = identifier;
                 output.TrueIdentifier = trueIdentifier;
             } else {
-                //Start accumulating weights for this chane
+                //Start accumulating weights for this chance
                 this.$_CumulativeRng[trueIdentifier] = (this.$_CumulativeRng[trueIdentifier] || 0) + chance;
 
                 //If the chance hits 50%, in theory, it should have an expected number of occurrences equal to 50% of all runs, so fire the event
@@ -1493,16 +1503,14 @@ if (typeof window == 'undefined') {
                 //For example, if Accuracy is 80% and Headshot is 80%, if the two are fully independent, every hit will be a headshot
                 //What this does is, it breaks up Accuracy into Accuracy-true and Accuracy-false, so Headshot will occur 80% of the time in Accuracy-true and Accuracy-false
                 //Basically, this evens out rng so it actually makes sense and doesn't provide oddities that realistically won't happen in-game
-                var prevIdentifier = identifier + '-' + output.Result[identifier];
-                if (prefix != undefined)
-                {
+                let prevIdentifier = identifier + '-' + output.Result[identifier];
+                if (prefix !== undefined) {
                     prevIdentifier += ':' + prefix;
                 }
                 
                 //Set the chance function in the output
                 output.Chance = function(chance, identifier) {
-                    var result = MAIN.Chance(chance, identifier, prevIdentifier, output);
-                    return result;
+                    return MAIN.Chance(chance, identifier, prevIdentifier, output);
                 }
                 output.Identifier = identifier;
                 output.TrueIdentifier = trueIdentifier;
@@ -1524,16 +1532,16 @@ if (typeof window == 'undefined') {
      */
     function $_DoProcs(damage, statusChance, rngHandler, remainChance, prefix) {
         //List of procs to return
-        var procs = [];
+        let procs = [];
 
         //Count damage
-        var totalDamage = 0;
+        let totalDamage = 0;
 
         //Sum it up
-        var keys = Object.keys(damage);
-        for (var k = 0; k < keys.length; k++)
+        let keys = Object.keys(damage);
+        for (let k = 0; k < keys.length; k++)
         {
-            var key = keys[k];
+            let key = keys[k];
             if (damage[key] > 0) {
                 totalDamage += damage[key];
             }
@@ -1542,19 +1550,19 @@ if (typeof window == 'undefined') {
         //If not normalized
         if (!rngHandler.Normalized) {
             //Get weight of damages
-            var damageWeights = {};
-            for (var k = 0; k < keys.length; k++)
+            let damageWeights = {};
+            for (let k = 0; k < keys.length; k++)
             {
-                var key = keys[k];
+                let key = keys[k];
                 if (damage[key] > 0) {
                     damageWeights[key] = damage[key] / totalDamage;
                 }
             }
 
             //Calculate if a proc will occur, based on status chance and damage weight
-            var remainingStatus = statusChance;
+            let remainingStatus = statusChance;
             while (remainingStatus > 0) {
-                var procType = $_statusWeightUnNormalized(Math.min(remainingStatus, 1), damageWeights);
+                let procType = $_statusWeightUnNormalized(Math.min(remainingStatus, 1), damageWeights);
 
                 //If it did occur, add it
                 if (procType != null) {
@@ -1567,18 +1575,18 @@ if (typeof window == 'undefined') {
             //Calculate a random proc
             function $_statusWeightUnNormalized(remainingStatus, damageWeights) {
                 //Check if a proc will occur
-                var variousStatus = remainChance.Chance(remainingStatus, `${prefix}Status`);
+                let variousStatus = remainChance.Chance(remainingStatus, `${prefix}Status`);
                 //If it does occur
                 if (variousStatus.Result[`${prefix}Status`]) {
                     //Determine which
-                    var which = Math.random();
-                    var whichSelect = 0;
+                    let which = Math.random();
+                    let whichSelect = 0;
 
                     //Based on damage weight
-                    var keys = Object.keys(damageWeights);
-                    for (var d = 0; d < keys.length; d++)
+                    let keys = Object.keys(damageWeights);
+                    for (let d = 0; d < keys.length; d++)
                     {
-                        var key = keys[d];
+                        let key = keys[d];
                         whichSelect += damageWeights[key];
                         if (which <= whichSelect)
                             return key;
@@ -1589,15 +1597,15 @@ if (typeof window == 'undefined') {
             }
         } else {
             //Normalized
-            var remainingStatus = statusChance;
+            let remainingStatus = statusChance;
             //Loop through status chance
             while (remainingStatus > 0) {
                 //Determine the chance of each proc occurring
-                for (var d = 0; d < keys.length; d++)
+                for (let d = 0; d < keys.length; d++)
                 {
                     //Determine if a proc of this damage type will occur
-                    var damageType = keys[d];
-                    var procType = $_statusWeightNormalized(damageType, $_damageWeightNormalized(damageType) * Math.min(remainingStatus, 1));
+                    let damageType = keys[d];
+                    let procType = $_statusWeightNormalized(damageType, $_damageWeightNormalized(damageType) * Math.min(remainingStatus, 1));
 
                     //If it did occur, add it
                     if (procType != null) {
@@ -1615,8 +1623,7 @@ if (typeof window == 'undefined') {
              */
             function $_damageWeightNormalized(damageType) {
                 //Weight is proportion of total damage
-                var weight = damage[damageType] / totalDamage;
-                return weight;
+                return damage[damageType] / totalDamage;
             }
 
             /**
@@ -1626,7 +1633,7 @@ if (typeof window == 'undefined') {
              */
             function $_statusWeightNormalized(damageType, weight) {
                 //Run the chance based on the weight of the proc
-                var variousStatus = remainChance.Chance(weight, `${prefix}Status${damageType}`);
+                let variousStatus = remainChance.Chance(weight, `${prefix}Status${damageType}`);
                 //If it did occur, return the type
                 if (variousStatus.Result[`${prefix}Status${damageType}`]) {
                     return damageType;
@@ -1645,27 +1652,27 @@ if (typeof window == 'undefined') {
      * @param {import('../../public/class-definitions/classes').Weapon} weapon 
      */
     function $_GetOtherMultipliersFromWeapon(weapon) {
-        var firstShotMultiplier =
-            this.RemainingMagazine == weapon.MagazineSize
+        let firstShotMultiplier =
+            this.RemainingMagazine === weapon.MagazineSize
                 ? weapon.FirstShotDamage
                 : 1;
 
-        var lastShotMultiplier =
-            this.RemainingMagazine == weapon.AmmoConsumption
+        let lastShotMultiplier =
+            this.RemainingMagazine === weapon.AmmoConsumption
             && !weapon.FiringMode.IsBeam
             && weapon.BaseMagazineSize >= 6
                 ? weapon.LastShotDamage
                 : 1;
 
-        var deadAimMultiplier =
+        let deadAimMultiplier =
             false //update to check if zoomed, probably will be a property on the firing mode
                 ? weapon.DeadAim
                 : 1;
 
-        var latronNextShotBonusMultiplier =
+        let latronNextShotBonusMultiplier =
             weapon.AugmentLatronNextShotBonusBuff;
 
-        var daikyuDistanceDamageBonusMultiplier =
+        let daikyuDistanceDamageBonusMultiplier =
             weapon.AugmentDaikyuDistanceDamageBonus;
 
         return [

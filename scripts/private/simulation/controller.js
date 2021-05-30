@@ -320,7 +320,7 @@ function QueueSimulation(messageHandler, weapon, enemies, isNormalized, accuracy
             enemyMessageHandler.CreateHandle($Classes.SimulationError.name, $_receiveSimulationError);
             
             //Create a simulation, then run it
-            var simulation = Simulator.SpawnSimulation(weapon, enemies[e], isNormalized, enemyMessageHandler);
+            let simulation = Simulator.SpawnSimulation(weapon, enemies[e], isNormalized, enemyMessageHandler);
             Simulator.QueueSimulation(simulation, accuracy, headshot);
         })(e);
     }
