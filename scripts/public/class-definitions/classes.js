@@ -3380,16 +3380,14 @@ if (typeof window == 'undefined') {
     module.exports.SimulationRequest = SimulationRequest;
 
     class SimulationProgress {
-        constructor() {
-
+        constructor(amount) {
+            this.Progress = amount;
         }
 
         ToObject() {
-            var data = {
+            return {
                 Progress: this.Progress
             };
-
-            return data;
         }
 
         /**
@@ -3397,15 +3395,7 @@ if (typeof window == 'undefined') {
          * @param {ProgressEvent} object 
          */
         static FromObject(object) {
-            var progress = new this()
-                .SetProgress(object.Progress);
-
-            return progress;
-        }
-
-        SetProgress(amount) {
-            this.Progress = amount;
-            return this;
+            return new this(object.Progress);
         }
     }
     $Classes.SimulationProgress = SimulationProgress;

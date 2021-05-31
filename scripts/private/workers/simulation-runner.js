@@ -124,8 +124,7 @@ if (!isMainThread)
          * @param {import('../../public/class-definitions/classes').EncodedMessage} progress 
          */
         function(progress) {
-            var progressObj = new $Classes.SimulationProgress()
-                .SetProgress(progress);
+            var progressObj = new $Classes.SimulationProgress(progress)
 
             var message = new $Classes.EncodedMessage()
                 .Encode(progressObj)

@@ -125,8 +125,7 @@ function QueueSimulation(messageHandler, weapon, enemies, isNormalized, accuracy
                 totalProgress /= enemies.length;
 
                 //Store total progress
-                var totalProgressObject = new $Classes.SimulationProgress()
-                    .SetProgress(totalProgress);
+                var totalProgressObject = new $Classes.SimulationProgress(totalProgress)
 
                 //Encode total progress
                 var message = new $Classes.EncodedMessage() 
