@@ -1,85 +1,162 @@
-const $Classes = require('../../public/class-definitions/classes');
-const fetch = require('isomorphic-fetch');
-const {queueSimulation} = require("./simulation-worker");
-const enableLogging = true;
+const {Metrics} = require('../classes/metrics');
+const {EnemyInstance} = require('../classes/enemy-instance');
+const {Weapon} = require('../classes/weapon');
+const {Enemy} = require('../classes/enemy');
+const {Mod} = require('../classes/mod');
+const {Simulation} = require('../classes/simulation')
+const {SimulationSettings} = require('../classes/simulation-settings')
+const {runSimulation} = require('./simulation-worker');
+const {WeaponInstance} = require('../classes/weapon-instance');
 
-let weaponData, enemyData, modData;
-const numEnemies = 20;
-const enemyLevel = 150;
+const enableLogging = true;
+const numEnemies = 500;
+const enemyLevel = 150; // TODO maybe just sample on 100 SUPER high level enemies to measure actual substantial differences in performance as you scale up
 
 /* TODO
     - incompatibilities
     - optimise simulator so we can use random sims (maybe recode own which just returns the metrics)
     - finetune maximizer settings according to the correct data: ensure it returns the same stuff across many runs
-    - 3rd threshold acceptance method using more mathematical temperature / threshold sequences, after trying tweaking (ie the above task)
 */
 
-(async () => {
-    function logError(e) {
-        console.log(e);
-    }
-    const response1 = await fetch('https://warframe.ethergizmos.com/data/weapons')
-        .catch(logError);
-    weaponData = await response1.json();
+function sortMods(a, b) {
+    if (a.id < b.id) return -1;
+    if (a.id > b.id) return 1;
+    return 0;
+}
 
-    const response2 = await fetch('https://warframe.ethergizmos.com/data/enemies')
-        .catch(logError);
-    enemyData = await response2.json();
+/**
+ *
+ * @param {Weapon} weapon
+ * @param additionalSettingsVariables
+ * @param {number} firingMode
+ * @returns {Promise<void>}
+ */
+async function queueSimulationMaximizer(weapon, additionalSettingsVariables, firingMode) {
+    let enemy = await Enemy.fromID('corrupted-heavy-gunner');
+    let enemyInstance = new EnemyInstance(enemy, enemyLevel)
 
-    const response3 = await fetch('https://warframe.ethergizmos.com/data/mods')
-        .catch(logError);
-    modData = await response3.json();
+    let validModsList = await Mod.getValidModsFor(weapon, true);
+    let unwanted = ['primed-bane-of-infested',
+        'primed-bane-of-corpus',
+        'primed-bane-of-grineer',
+        'bane-of-infested',
+        'bane-of-corpus',
+        'bane-of-grineer',
+        'bane-of-corrupted',
+        'amalgam-serration'];
 
-    let shedu = $Classes.Weapon.FromJSONObject(weaponData['shedu']);
-    await queueSimulationMaximizer(shedu, {});
-})()
+    validModsList = validModsList.filter((mod) => !unwanted.includes(mod.id));
 
-async function queueSimulationMaximizer(weapon, additionalSettingsVariables) {
-    let enemy = $Classes.Enemy.FromJSONObject(enemyData['corrupted-heavy-gunner']);
-    enemy.SetLevel(enemyLevel);
+    let weaponInstance = new WeaponInstance(weapon, [], firingMode);
+    let simulationSettings = new SimulationSettings(1, 0, numEnemies);
 
-    let validModsMap = new Map();
-    let validModsList = [];
-    for (let [modID, modInfo] of Object.entries(modData)) {
-        if (modID === 'proton-jet') continue;
-        let mod = $Classes.Mod.FromObject(modInfo);
-        if (mod.IsCompatible(weapon)) {
-            validModsList.push(modID);
-            validModsMap.set(modID, mod);
+    // test code
+    /*let builds = [['primed-bane-of-corrupted', 'split-chamber', 'vital-sense', 'serration', 'hunter-munitions', 'point-strike', 'primed-cryo-rounds', 'malignant-force']];
+    for (let build of builds) {
+        let weaponModded = $Classes.Weapon.FromObject(weapon.ToObject());
+        for (let i = 0; i < 8; i++) {
+            weaponModded.SetMod(i, $Classes.Mod.FromObject(modData[build[i]]), false);
         }
+        let results = mean(await queueSimulation(weaponModded, enemies));
+        console.log(build, results);
+    }*/
+    /* let testMods = ['primed-bane-of-corrupted', 'split-chamber', 'vital-sense', 'serration', 'hunter-munitions', 'point-strike', 'primed-cryo-rounds', 'malignant-force']
+    let actualMods = [];
+    for (let modId of testMods) {
+        actualMods.push(await Mod.fromID(modId));
     }
-    let enemies = Array(numEnemies).fill(enemy);
+    weaponInstance.setMods(actualMods);*/
 
     // Threshold Acceptance with Temperature Correlated with Quality
     // Pick a random set of 8 mods
-    let [currentMods, currentWeapon] = getRandomMods(validModsList, weapon);
-    let currentResults = mean(queueSimulation(new $Classes.EncodedMessageHandler(), currentWeapon, enemies));
-    let allTimeBestBuilds = [currentMods];
+    let currentMods = getRandomMods(validModsList, weaponInstance, true);
+    let simulation = new Simulation(weaponInstance, [enemyInstance], simulationSettings);
+    weaponInstance.logMods();
+    let metrics = (await simulation.run())[0]; // returns Metrics[][], we seek Metrics[] which contains one Metrics for each iteration of the enemy type
+    let currentResults = Metrics.meanKillTime(metrics);
+
+    let x = []
+    for (let metric of metrics) x.push((metric.killTime))
+    console.log(x);
+    console.log(currentResults);
+    return;
+
+    let allTimeBestBuilds = new Map(); // build (Mod[]): kill-time (number)
     let allTimeBestResults = currentResults;
+
+    allTimeBestBuilds.set(currentMods.sort(sortMods), currentResults);
+    if (enableLogging) console.log('Maximization for:', weapon.Name);
     if (enableLogging) console.log('Initial state:', currentMods, currentResults);
 
-    let maxIterations = 2000;
-    let numIterationsNoImprovement = 0;
-    let temperature = enemyLevel * 3;
+    let numSamples = 500;
+    let maxIterations = 7500;
+    let temperatureSample = await new Promise((resolve) => {
+        let temperatures = [];
+        for (let k = 0; k < numSamples; k++) {
+            (async () => {
+                let [randomMods, randomWeapon] = getRandomMods(validModsList, weapon);
+                let [neighbourMods, neighbourWeapon] = getRandomNeighbour(randomMods, validModsList, randomWeapon);
+                let randomResults = await dynamicPool.exec({
+                    task: runSimulation,
+                    param: {
+                        weapon: randomWeapon.ToObject(),
+                        enemy: enemy.ToObject(),
+                    }
+                })
+                let neighbourResults = await dynamicPool.exec({
+                    task: runSimulation,
+                    param: {
+                        weapon: neighbourWeapon.ToObject(),
+                        enemy: enemy.ToObject(),
+                    }
+                })
+                let diff = Math.abs(neighbourResults - randomResults) / 75;
+                if (diff < 0.1) diff = Math.random() * 0.9 + 0.1;
+                temperatures.push(diff);
+                if (temperatures.length === numSamples) {
+                    temperatures.sort((a, b) => b - a);
+                    resolve(temperatures);
+                }
+            })();
+
+        }
+    })
+
+    let temperatures = [];
+    let numFillerPoints = maxIterations / numSamples;
+    for (let i = 0; i < temperatureSample.length; i++) {
+        let high = temperatureSample[i];
+        let low = i + 1 === temperatureSample.length ? 0.1 : temperatureSample[i + 1];
+        let diff = high - low;
+        for (let j = 0; j < numFillerPoints; j++) {
+            temperatures[i * numFillerPoints + j] = diff * (numFillerPoints - j) / numFillerPoints + low;
+        }
+    }
+
+    //let numIterationsNoImprovement = 0;
+    //let temperature = enemyLevel * 2;
+    let randomErrorThreshold = 0.2; // TODO run tests on all the builds at the end with 10k enemies or something
     for (let k = 0; k < maxIterations; k++) {
-        if (numIterationsNoImprovement === 20) {
+        /*if (numIterationsNoImprovement === 20) {
             temperature *= 0.8;
             numIterationsNoImprovement = 0;
-        }
+        }*/
 
         let [newMods, newWeapon] = getRandomNeighbour(currentMods, validModsList, currentWeapon);
-        let newResults = mean(queueSimulation(new $Classes.EncodedMessageHandler(), newWeapon, enemies));
-        if (newResults < allTimeBestResults) {
-            allTimeBestBuilds = [newMods];
+        let newResults = mean(await queueSimulation(newWeapon, enemies));
+        if (newResults < allTimeBestResults - randomErrorThreshold) {
+            allTimeBestBuilds.clear();
+            allTimeBestBuilds.set(newMods.sort(), newResults);
             allTimeBestResults = newResults;
-            numIterationsNoImprovement = 0;
-        } else if (newResults === allTimeBestResults && !containsUnordered(allTimeBestBuilds, newMods)) {
-            allTimeBestBuilds.push(newMods)
+            //numIterationsNoImprovement = 0;
+        } else if (Math.abs(newResults - allTimeBestResults) < randomErrorThreshold && !containsUnordered(allTimeBestBuilds, newMods)) {
+            allTimeBestBuilds.set(newMods.sort(), newResults)
+            allTimeBestResults = Math.min(allTimeBestResults, newResults);
         } else {
-            numIterationsNoImprovement++;
+            //numIterationsNoImprovement++;
         }
 
-        if (thresholdAcceptance(newResults, currentResults, temperature)) {
+        if (thresholdAcceptance(newResults, currentResults, temperatures[k])) {
             currentMods = newMods;
             currentResults = newResults;
             currentWeapon = newWeapon;
@@ -94,24 +171,37 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables) {
     if (enableLogging) console.log('All-time best builds:', allTimeBestBuilds, allTimeBestResults);
 }
 
+/**
+ *
+ * @param newResults
+ * @param currentResults
+ * @param temperature
+ * @returns {boolean}
+ */
 function thresholdAcceptance(newResults, currentResults, temperature) {
     let quality = currentResults - newResults // the higher the better
     if (enableLogging) console.log('Quality:', quality, '-Temperature:', -temperature);
     return quality > (-temperature);
 }
 
-function getRandomMods(validModsList, weapon) {
+/**
+ *
+ * @param {Mod[]} validModsList
+ * @param {WeaponInstance} weaponInstance
+ * @param {boolean} updateWeapon - Whether or not to set the weapon instance's mods to the random mods found.
+ * @returns {Mod[]} - List of the random mods.
+ */
+function getRandomMods(validModsList, weaponInstance, updateWeapon) {
     let randomMods = [];
-    let weaponModded = $Classes.Weapon.FromObject(weapon.ToObject());
     for (let i = 0; i < 8; i++) {
         let modID = validModsList[Math.floor(Math.random() * validModsList.length)];
         while (!isCompatible(randomMods, modID)) {
             modID = validModsList[Math.floor(Math.random() * validModsList.length)];
         }
         randomMods.push(modID);
-        weaponModded.SetMod(i, $Classes.Mod.FromObject(modData[modID]), false);
     }
-    return [randomMods, weaponModded];
+    if (updateWeapon) weaponInstance.setMods(randomMods);
+    return randomMods;
 }
 
 /**
@@ -140,6 +230,41 @@ function getRandomNeighbour(existingMods, validModsList, weapon) {
     return [newMods, weaponModded];
 }
 
+/**
+ *
+ * @param weapon
+ * @param enemies
+ * @returns {[number]} killTimes
+ */
+async function queueSimulation(weapon, enemies) {
+    return await new Promise((resolve) => {
+        let killTimes = []
+        for (let e = 0; e < enemies.length; e++) {
+            (async () => {
+                // Kill time for this enemy
+                killTimes[e] = await dynamicPool.exec({
+                    task: runSimulation,
+                    param: {
+                        weapon: weapon.ToObject(),
+                        enemy: enemies[e].ToObject(),
+                    }
+                })
+                if (killTimes.length === enemies.length) {
+                resolve(killTimes);
+            }
+            })();
+
+        }
+    })
+
+}
+
+/**
+ *
+ * @param existingMods
+ * @param newMod
+ * @returns {boolean}
+ */
 function isCompatible(existingMods, newMod) {
     if (existingMods.includes(newMod)) {
         return false;
@@ -150,13 +275,24 @@ function isCompatible(existingMods, newMod) {
     if ((existingMods.includes(s) || existingMods.includes(aS)) && serrations.includes(newMod)) {
         return false;
     }
-    return true; // TODO change to check for incompatibility instead
+    return true; // TODO change to check for incompatibility instead, would be Mod.isCompatibleWithMods, same signature
 }
 
+/**
+ *
+ * @param list
+ * @returns {number}
+ */
 function mean(list) {
     return (list.reduce((a,b) => (a + b))) / list.length;
 }
 
+/**
+ *
+ * @param outerList
+ * @param innerList
+ * @returns {boolean}
+ */
 function containsUnordered(outerList, innerList) {
     for (let eachList of outerList) {
         if (isSameArray(eachList, innerList)) {
@@ -166,8 +302,28 @@ function containsUnordered(outerList, innerList) {
     return false;
 }
 
+/**
+ *
+ * @param array1
+ * @param array2
+ * @returns {boolean}
+ */
 function isSameArray(array1, array2) {
     const isInArray1 = array1.every(item => array2.find(item2 => item===item2));
     const isInArray2 = array2.every(item => array1.find(item2 => item===item2));
     return array1.length === array2.length && isInArray1 && isInArray2;
 }
+
+
+
+// Driver code
+(async () => {
+    let weapon = await Weapon.fromID('ignis-wraith');
+    await new Promise(r => setTimeout(r, 2000));
+    queueSimulationMaximizer(weapon, {}, 0)
+        .then(async () => {
+            const {dynamicPool} = require('../classes/simulation');
+            await dynamicPool.destroy();
+        });
+    console.log('Ready to start min/maxing hard...');
+})()

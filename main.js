@@ -9,26 +9,25 @@ const websocket = require('./modules/websocket');
 const Modules = [];
 
 /** @type {import('express').Express} */
-var app;
+let app;
 
 /**
  * Initialize this web app; setup function calls steps that need to be performed before any other settings are set
  * @param {function(app)} setupFunction 
  */
-function Initialize(setupFunction)
-{
+function Initialize(setupFunction) {
     //Create the app if it doesn't exist
     app = app || express();
     //Call the first setup steps
     setupFunction(app);
 
-    var folderPath = path.join(__dirname, './modules');
+    let folderPath = path.join(__dirname, './modules');
     fs.readdirSync(folderPath).forEach(file => {
-        var filePath = path.join(folderPath, file);
+        let filePath = path.join(folderPath, file);
         if (fs.lstatSync(filePath).isDirectory())
             return;
 
-        var module = require(filePath);
+        let module = require(filePath);
         module.Initialize(app);
         Modules.push(module);
     });
@@ -76,7 +75,7 @@ function Initialize(setupFunction)
     //If it fails all routers, the handler will land here
     //Catch Error 404 and forward to error handler
     app.use(function(req, res, next) {
-        var err = new Error('Not Found');
+        let err = new Error('Not Found');
         err.status = 404;
         next(err);
     });

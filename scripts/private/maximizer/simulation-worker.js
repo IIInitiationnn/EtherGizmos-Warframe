@@ -1,6 +1,3 @@
-const $Classes = require('../../public/class-definitions/classes');
-const $ClassesPriv = require('../class-definitions/classes');
-const maxSimulationDuration = 999999;
 
 /*expose(function runSimulationInstance(weapon, enemy, accuracy, headshot) {
     // Create a timer to reside over the simulation
@@ -106,167 +103,98 @@ const maxSimulationDuration = 999999;
 })
 */
 
-function queueSimulation(messageHandler, weapon, enemies) {
-    // Keep track of progress
-    /*let statuses = [];
-    let averageProgress = 0;*/
-
-    // Create a new EncodedMessageHandler for events
-    let enemyMessageHandler = new $Classes.EncodedMessageHandler();
-
-    /**
-     * Handles SimulationProgress received by the thread
-     * @param {import('../../public/class-definitions/classes').SimulationProgress} progress
-     */
-    function $_receiveSimulationProgress(progress) {
-        // Get the progress of this enemy
-        /*averageProgress += (progress.Progress - statuses[e]) / numEnemies; // new progress minus previous progress
-        statuses[e] = progress.Progress;*/
-
-        // Encode total progress
-        let averageProgressObject = new $Classes.SimulationProgress(0)
-        let message = new $Classes.EncodedMessage()
-            .Encode(averageProgressObject)
-            .ToObject();
-
-        // Send it along
-        messageHandler.DoHandle(message);
-    }
-
-    /**
-     * Handles Metrics received by the thread
-     * @param {import('../../public/class-definitions/classes').Metrics} metrics
-     */
-    function $_receiveSimulationResults(metrics) {
-        // Set the id of metrics, intended for clients
-        //metrics.SetId(e);
-
-        // Encode metrics
-        let message = new $Classes.EncodedMessage()
-            .Encode(metrics)
-            .ToObject();
-
-        // Send it along
-        messageHandler.DoHandle(message);
-    }
-
-    /**
-     * Handles SimulationErrors received by the thread
-     * @param {import('../../public/class-definitions/classes').SimulationError} error
-     */
-    function $_receiveSimulationError(error) {
-        // Set the id of the error
-        //error.SetId(e);
-
-        // Encode the error
-        let message = new $Classes.EncodedMessage()
-            .Encode(error)
-            .ToObject();
-
-        // Send it along
-        messageHandler.DoHandle(message);
-    }
-
-    // Set these events in the EncodedMessageHandler
-    enemyMessageHandler.CreateHandle($Classes.SimulationProgress.name, $_receiveSimulationProgress);
-    enemyMessageHandler.CreateHandle($Classes.Metrics.name, $_receiveSimulationResults);
-    enemyMessageHandler.CreateHandle($Classes.SimulationError.name, $_receiveSimulationError);
-
-    // Run it
-    return runSimulation(weapon, enemies, 0.9, 0.5, enemyMessageHandler);
-}
-module.exports.queueSimulation = queueSimulation;
-
 /**
- * Run one iteration of a simulation over a set of enemies.
+ * Run one iteration of a simulation over one enemy.
  * TODO: do we want to split a full simulation into a set of iterations, each of which goes over each enemy?
  *  how we split the simulation will determine how we handle frontend information
  *  i definitely dont think we should just run a simulation a bunch to get the number of iterations,
  *  that seems like unnecessary post processing after getting all the data from each iteration
  *  it would be better to contain it all in one function
  *  delegate each iteration to a thread i think because each full simulation is awaited on, no point having it all on 1 thread then only 1 thread gets utilised
- * @param weapon
- * @param enemies
- * @param accuracy
- * @param headshot
- * @param messageHandler
- * @returns {[number]} killTimes
+ * @param param
+ * @returns {number} killTime
  */
-function runSimulation(weapon, enemies, accuracy, headshot, messageHandler) {
+function runSimulation(param) {
+    let weapon = param.weapon;
+    let enemy = param.enemy;
+    const $Classes = require('../../public/class-definitions/classes');
+    const $ClassesPriv = require('../class-definitions/classes');
+    const maxSimulationDuration = 999999;
+
     let rngHandler = new $ClassesPriv.RngHandler(false);
-    let killTimes = []
-    for (let e = 0; e < enemies.length; e++) {
-        // Create a timer to reside over this enemy interaction
-        let timer = new $Classes.Timer();
 
-        //Create objects to handle runtime instances of static weapon/enemies
-        let runtimeWeapon = new $Classes.RuntimeWeapon(weapon, timer, this.Events, accuracy, headshot);
-        let runtimeEnemy = new $Classes.RuntimeEnemy(enemies[e], timer, this.Events);
+    // Create a timer to reside over this enemy interaction
+    let timer = new $Classes.Timer();
 
-        //Keep track of shots fired
-        let shotCount = 0;
+    //Create objects to handle runtime instances of static weapon/enemies
+    let runtimeWeapon = new $Classes.RuntimeWeapon($Classes.Weapon.FromObject(weapon), timer, this.Events, 1, 0);
+    let runtimeEnemy = new $Classes.RuntimeEnemy($Classes.Enemy.FromObject(enemy), timer, this.Events);
 
-        //Loop while enemy is alive, or until 999ks passes in the simulation (a lot of time)
-        while (runtimeEnemy.IsAlive && timer.ElapsedTime < maxSimulationDuration) {
-            //Get the next notable events from each runtime object
-            let timeStepWeapon = runtimeWeapon.NextEventTimeStep;
-            let timeStepEnemy = runtimeEnemy.NextEventTimeStep;
+    //Keep track of shots fired
+    let shotCount = 0;
 
-            // Jump to the earliest notable event
-            let timeStep = Math.min(timeStepWeapon, timeStepEnemy);
-            timer.AddTime(timeStep);
+    //Loop while enemy is alive, or until 999ks passes in the simulation (a lot of time)
+    while (runtimeEnemy.IsAlive && timer.ElapsedTime < maxSimulationDuration) {
+        //Get the next notable events from each runtime object
+        let timeStepWeapon = runtimeWeapon.NextEventTimeStep;
+        let timeStepEnemy = runtimeEnemy.NextEventTimeStep;
 
-            // Handle buffs
-            runtimeWeapon.DoBuffs();
+        // Jump to the earliest notable event
+        let timeStep = Math.min(timeStepWeapon, timeStepEnemy);
+        timer.AddTime(timeStep);
 
-            // If the weapon can shoot
-            if (runtimeWeapon.CanShoot) {
-                //Shoot the enemy
-                let [shotRng, identifier] = runtimeWeapon.Shoot(runtimeEnemy, rngHandler);
-                shotCount++;
+        // Handle buffs
+        runtimeWeapon.DoBuffs();
 
-                // Keep track of metrics from the shot
-                let hitCount = 0;
-                let critCount = {};
-                let headCount = 0;
-                let headCritCount = 0;
-                let procs = [];
+        // If the weapon can shoot
+        if (runtimeWeapon.CanShoot) {
+            //Shoot the enemy
+            let [shotRng, identifier] = runtimeWeapon.Shoot(runtimeEnemy, rngHandler);
+            shotCount++;
 
-                // Loop through each pellet
-                for (let s = 0; s < shotRng.length; s++) {
-                    let shot = shotRng[s];
-                    if (shot.Hit) hitCount++;
-                    if (shot.Critical !== undefined) critCount[shot.Critical] = (critCount[shot.Critical] || 0) + 1;
-                    if (shot.Headshot) headCount++;
-                    if (shot.Critical && shot.Headshot) headCritCount++;
-                    if (shot.Procs !== undefined && shot.Procs.length > 0) {
-                        procs = procs.concat(shot.Procs);
-                    }
-                    if (shot.Residuals !== undefined && shot.Residuals.length > 0) {
-                        for (let r = 0; r < shot.Residuals.length; r++) {
-                            procs = procs.concat(shot.Residuals[r].Procs);
-                        }
+            // Keep track of metrics from the shot
+            let hitCount = 0;
+            let critCount = {};
+            let headCount = 0;
+            let headCritCount = 0;
+            let procs = [];
+
+            // Loop through each pellet
+            for (let s = 0; s < shotRng.length; s++) {
+                let shot = shotRng[s];
+                if (shot.Hit) hitCount++;
+                if (shot.Critical !== undefined) critCount[shot.Critical] = (critCount[shot.Critical] || 0) + 1;
+                if (shot.Headshot) headCount++;
+                if (shot.Critical && shot.Headshot) headCritCount++;
+                if (shot.Procs !== undefined && shot.Procs.length > 0) {
+                    procs = procs.concat(shot.Procs);
+                }
+                if (shot.Residuals !== undefined && shot.Residuals.length > 0) {
+                    for (let r = 0; r < shot.Residuals.length; r++) {
+                        procs = procs.concat(shot.Residuals[r].Procs);
                     }
                 }
-
-            } else {
-                //It can't shoot, so do actions such as waiting between shots or reloading
-                runtimeWeapon.PrepareForShot(timeStep);
             }
 
-            //Handle residual effects, like explosions or gas clouds
-            runtimeWeapon.DoResiduals(rngHandler, runtimeEnemy);
-
-            //Handle procs on the enemy
-            runtimeEnemy.DoProcs(timeStep);
-
-            //If the enemy is dead
-            if (runtimeEnemy.CurrentHealth <= 0) {
-                break;
-            }
+        } else {
+            //It can't shoot, so do actions such as waiting between shots or reloading
+            runtimeWeapon.PrepareForShot(timeStep);
         }
-        // Kill time for this enemy
-        killTimes[e] = timer.ElapsedTime;
+
+        //Handle residual effects, like explosions or gas clouds
+        runtimeWeapon.DoResiduals(rngHandler, runtimeEnemy);
+
+        //Handle procs on the enemy
+        runtimeEnemy.DoProcs(timeStep);
+
+        //If the enemy is dead
+        if (runtimeEnemy.CurrentHealth <= 0) {
+            break;
+        }
     }
-    return killTimes;
+    return timer.ElapsedTime;
 }
+
+module.exports = {
+    runSimulation
+};
