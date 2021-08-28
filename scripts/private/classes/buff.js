@@ -6,14 +6,15 @@ class Buff {
      * - TODO other stuff not implemented... including condition overload... basically conditional mods / weapon fx
      */
     constructor() {
-        /** @type {Object.<number, number>} ModEffectType: strength */
-        this.effects = undefined;
+        /** @type {Map<ModEffectType, number>} ModEffectType: Power */
+        this.effects = new Map();
+
         this.remainingDuration = undefined;
     }
 
     /**
      *
-     * @returns {Object<number, number>}
+     * @returns {Map<ModEffectType, number>}
      */
     getEffects() {
         return this.effects;

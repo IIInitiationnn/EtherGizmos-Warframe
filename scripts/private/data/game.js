@@ -549,6 +549,12 @@ async function getShieldTypes() {
     return shieldTypeData;
 }
 
+/*class Data {
+    async static updateData() {
+        await tryUpdateData();
+    }
+}*/
+
 module.exports = {
     getWeapons,
     getMods,

@@ -1,5 +1,7 @@
 const {usefulModEffectTypes} = require("./magic-types");
+const {replacer, reviver} = require('./map-util');
 // const superconsole = require('../../../../../scripts/logging/superconsole');
+// const avro = require('avsc');
 
 class Mod {
     constructor() {
@@ -12,15 +14,22 @@ class Mod {
         this.maxRank = undefined;
         this.polarity = undefined;
 
-        /** @type {Object.<number, number>} - Note that the number key is cast to a string */
-        this.effects = {};
-        // TODO mod instance with max rank constructor (thats the only field ik rn)
+        /** @type {Map<ModEffectType, number>} - ModEffectType: Power */
+        this.effects = new Map();
 
-        /** @type {Object.<number, number>} - Rank: {Mod Effect: Power} */
-        this.effectsRanked = {};
+        /** @type {Map<number, Map<ModEffectType, number>>} - Rank: {ModEffectType: Power} */
+        this.effectsRanked = new Map();
 
-        /** @type {Object.<number, string>} - Note that the number key is cast to a string */
-        this.effectDescriptions = {};
+        /** @type {Map<ModEffectType, string>} ModEffectType: Description */
+        this.effectDescriptions = new Map();
+    }
+
+    /**
+     * Convert Mod object into JSON string.
+     * @returns {string}
+     */
+    serialize() {
+        return JSON.stringify(this)
     }
 
     /**
@@ -28,9 +37,9 @@ class Mod {
      * @param {string} object
      * @returns {Mod}
      */
-    static fromObject(object) {
-        let plainObject = JSON.parse(object);
-        return Object.setPrototypeOf(plainObject, Mod.prototype)
+    static deserialize(object) {
+        let plainObject = JSON.parse(object, reviver);
+        return Object.setPrototypeOf(plainObject, Mod.prototype);
     }
 
     /**
@@ -96,9 +105,17 @@ class Mod {
         return mod;*/
     }
 
+    getID() {
+        return this.id;
+    }
+
+    getMaxRank() {
+        return this.maxRank;
+    }
+
     /**
      *
-     * @returns {Object<number, number>}
+     * @returns {Map<ModEffectType, number>}
      */
     getEffects() {
         return this.effects;
@@ -106,11 +123,11 @@ class Mod {
 
     /**
      *
-     * @param {number} effectType - See ModEffectType.
+     * @param {ModEffectType} effectType
      * @returns {number}
      */
     getEffect(effectType) {
-        return this.effects[effectType];
+        return this.effects.get(effectType);
     }
 
     setID(id) {
@@ -144,12 +161,12 @@ class Mod {
     }
 
     setMaxRank(maxRank) {
-        this.maxRank = maxRank; //Math.max(Math.min(maxRank, this.maxRank), 0) use this for modinstance constructor
+        this.maxRank = maxRank;
         return this;
     }
 
     addEffect(modEffectType, power = 0) {
-        this.effects[modEffectType] = power;
+        this.effects.set(modEffectType, power);
         return this;
     }
 
@@ -159,13 +176,14 @@ class Mod {
     }
 
     addEffectRanked(rank, modEffectType, power = 0) {
-        this.effectsRanked[rank] = this.effectsRanked[rank] || {};
-        this.effectsRanked[rank][modEffectType] = power;
+        let existing = this.effectsRanked.get(rank);
+        this.effectsRanked.set(rank, existing === undefined ? new Map() : existing);
+        this.effectsRanked.get(rank).set(modEffectType, power);
         return this;
     }
 
     addEffectDescription(modEffectType, description) {
-        if (description != null) this.effectDescriptions[modEffectType] = description;
+        if (description != null) this.effectDescriptions.set(modEffectType, description);
         return this;
     }
 
@@ -214,6 +232,80 @@ class Mod {
     }
 }
 
+class ModInstance {
+    constructor(mod) {
+        /** @type Mod */
+        this.mod = mod;
+        this.rank = mod.getMaxRank();
+    }
+
+    static async fromModID(id) {
+        return new this(await Mod.fromID(id));
+    }
+
+    /**
+     * Convert ModInstance object into JSON string.
+     * @returns {string}
+     */
+    serialize() {
+        return JSON.stringify(this, replacer)
+    }
+
+    /**
+     * Convert JSON object string into object with ModInstance prototype.
+     * @param {string} object
+     * @returns {Mod}
+     */
+    static deserialize(object) {
+        let plainObject = JSON.parse(object);
+        plainObject.mod = Mod.deserialize(JSON.stringify(plainObject.mod));
+        return Object.setPrototypeOf(plainObject, this.prototype)
+    }
+
+    /**
+     * TODO select according to this.rank
+     * @param {number} effectType - See ModEffectType.
+     * @returns {number}
+     */
+    getRankedEffect(effectType) {
+        //return this.mod.effectsRanked[effectType];
+        return this.mod.getEffect(effectType);
+    }
+
+    // TODO select according to this.rank
+    getRankedEffects(effectType) {
+        //return this.mod.effectsRanked;
+        return this.mod.getEffects();
+    }
+
+    /**
+     * Fetch the base mod.
+     * @returns {Mod}
+     */
+    getMod() {
+        return this.mod;
+    }
+
+    /**
+     * Find the rank of this mod instance.
+     * @returns {number}
+     */
+    getRank() {
+        return this.rank;
+    }
+
+    /**
+     * Set the rank of this mod.
+     * @param rank
+     * @returns {ModInstance}
+     */
+    setRank(rank) {
+        this.rank = Math.max(Math.min(rank, this.mod.maxRank), 0);
+        return this;
+    }
+}
+
 module.exports = {
-    Mod
+    Mod,
+    ModInstance
 }

@@ -16,6 +16,12 @@ const DamageType = {
     VOID: 256
 }
 
+function isElement(damageType) {
+    return [DamageType.COLD, DamageType.ELECTRIC, DamageType.HEAT, DamageType.TOXIN,
+        DamageType.MAGNETIC, DamageType.BLAST, DamageType.RADIATION, DamageType.VIRAL,
+        DamageType.CORROSIVE, DamageType.GAS].includes(damageType);
+}
+
 function isPrimaryElement(damageType) {
     return [DamageType.COLD, DamageType.ELECTRIC, DamageType.HEAT, DamageType.TOXIN].includes(damageType);
 }
@@ -298,6 +304,7 @@ function elementalModEffectTypes() {
 
 module.exports = {
     DamageType,
+    isElement,
     isPrimaryElement,
     breakDownSecondaryElement,
     ModRarity,

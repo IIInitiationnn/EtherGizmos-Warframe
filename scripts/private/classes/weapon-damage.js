@@ -1,22 +1,24 @@
-const {DamageType} = require('./magic-types');
+const {isElement, DamageType} = require('./magic-types');
+const {replacer, reviver} = require('./map-util');
 
-class WeaponDamage {
+class WeaponDamage extends Map {
     constructor() {
-        this[DamageType.IMPACT] = 0;
-        this[DamageType.PUNCTURE] = 0;
-        this[DamageType.SLASH] = 0;
-        this[DamageType.COLD] = 0;
-        this[DamageType.ELECTRIC] = 0;
-        this[DamageType.HEAT] = 0;
-        this[DamageType.TOXIN] = 0;
-        this[DamageType.BLAST] = 0;
-        this[DamageType.CORROSIVE] = 0;
-        this[DamageType.GAS] = 0;
-        this[DamageType.MAGNETIC] = 0;
-        this[DamageType.RADIATION] = 0;
-        this[DamageType.VIRAL] = 0;
-        this[DamageType.TRUE] = 0;
-        this[DamageType.VOID] = 0;
+        super();
+        this.set(DamageType.IMPACT, 0);
+        this.set(DamageType.PUNCTURE, 0);
+        this.set(DamageType.SLASH, 0);
+        this.set(DamageType.COLD, 0);
+        this.set(DamageType.ELECTRIC, 0);
+        this.set(DamageType.HEAT, 0);
+        this.set(DamageType.TOXIN, 0);
+        this.set(DamageType.BLAST, 0);
+        this.set(DamageType.CORROSIVE, 0);
+        this.set(DamageType.GAS, 0);
+        this.set(DamageType.MAGNETIC, 0);
+        this.set(DamageType.RADIATION, 0);
+        this.set(DamageType.VIRAL, 0);
+        this.set(DamageType.TRUE, 0);
+        this.set(DamageType.VOID, 0);
     }
 
     /**
@@ -24,34 +26,39 @@ class WeaponDamage {
      * @returns {WeaponDamage}
      */
     clone() {
-        return Object.setPrototypeOf(JSON.parse(JSON.stringify(this)), WeaponDamage.prototype);
+        return Object.setPrototypeOf(JSON.parse(JSON.stringify(this, replacer), reviver), WeaponDamage.prototype);
     }
 
     totalBaseDamage() {
         let sum = 0;
-        for (let damageType of Object.keys(this)) sum += this[damageType];
+        for (let damageValue of this.values()) sum += damageValue;
         return sum;
+        // TODO kuva / tenet bonus counts to base damage
     }
 
     /**
      * Finds all the innate elements (4 primary and 6 secondary) as well as their damage.
      * Key: damage type. Value: damage.
-     * @returns {Object.<number, number>}
+     * @returns {Map<DamageType, number>}
      */
     innateElements() {
-        let elements = {};
-        for (let damageType of Object.keys(this)) {
-            if (this[damageType] !== 0 && parseFloat(damageType) >= DamageType.COLD && parseFloat(damageType) <= DamageType.GAS) {
-                elements[damageType] = this[damageType];
+        let elements = new Map();
+        for (let [damageType, damageValue] of this.entries()) {
+            if (damageValue !== 0 && isElement(damageType)) {
+                elements.set(damageType, damageValue);
             }
         }
         return elements;
     }
 
+    add(damageType, damageValue) {
+        this.set(damageType, this.get(damageType) + damageValue);
+    }
+
     multiply(multiplier) {
         let multiplied = this.clone();
-        for (let damageType of Object.keys(multiplied)) {
-            multiplied[damageType] *= multiplier;
+        for (let [damageType, damageValue] of this.entries()) {
+            multiplied.set(damageType, damageValue * multiplier);
         }
         return multiplied;
     }
@@ -63,8 +70,8 @@ class WeaponDamage {
      */
     afterHealthResistances(healthType) {
         let damageAfterResistances = this.clone();
-        for (let damageType of Object.keys(damageAfterResistances)) {
-            damageAfterResistances[damageType] *= (1 + healthType.resistances[damageType]); // 1 + HM
+        for (let [damageType, damageValue] of damageAfterResistances.entries()) {
+            damageAfterResistances.set(damageType, damageValue * (1 + healthType.resistances.get(damageType))); // 1 + HM
         }
         //console.log('afterHealthResistances:', damageAfterResistances)
         return damageAfterResistances;
@@ -77,8 +84,9 @@ class WeaponDamage {
      */
     afterArmorTypeResistances(armorType) {
         let damageAfterResistances = this.clone();
-        for (let damageType of Object.keys(this)) {
-            damageAfterResistances[damageType] *= (1 + armorType.resistances[damageType]); // 1 + AM
+        if (armorType == null) return damageAfterResistances;
+        for (let [damageType, damageValue] of damageAfterResistances.entries()) {
+            damageAfterResistances.set(damageType, damageValue * (1 + armorType.resistances.get(damageType))); // 1 + AM
         }
         //console.log('afterArmorTypeResistances:', damageAfterResistances)
         return damageAfterResistances;
@@ -94,10 +102,11 @@ class WeaponDamage {
         // General armor damage reduction = Net Armor / (Net Armor + 300)
         // so multiplier = 1 - reduction = 300 / (Net Armor + 300)
         let damageAfterResistances = this.clone();
-        for (let damageType of Object.keys(this)) {
-            let netArmor = enemyArmor * (1 - armorType.resistances[damageType]); // AR * (1 - AM)
+        if (armorType == null) return damageAfterResistances;
+        for (let [damageType, damageValue] of damageAfterResistances.entries()) {
+            let netArmor = enemyArmor * (1 - armorType.resistances.get(damageType)); // AR * (1 - AM)
             let multiplier = 300 / (300 + netArmor);
-            damageAfterResistances[damageType] *= multiplier;
+            damageAfterResistances.set(damageType, damageValue * multiplier);
         }
         //console.log('afterNetArmorResistances:', damageAfterResistances)
         return damageAfterResistances;
@@ -110,84 +119,85 @@ class WeaponDamage {
      */
     afterShieldResistances(shieldType) {
         let damageAfterResistances = this.clone();
-        for (let damageType of Object.keys(this)) {
-            damageAfterResistances[damageType] *= (1 + shieldType.resistances[damageType]);
+        if (shieldType == null) return damageAfterResistances;
+        for (let [damageType, damageValue] of damageAfterResistances.entries()) {
+            damageAfterResistances.set(damageType, damageValue * (1 + shieldType.resistances.get(damageType)));
         }
         return damageAfterResistances;
     }
 
     setImpact(impact) {
-        this[DamageType.IMPACT] = parseFloat(impact);
+        this.set(DamageType.IMPACT, parseFloat(impact));
         return this;
     }
 
     setPuncture(puncture) {
-        this[DamageType.PUNCTURE] = parseFloat(puncture);
+        this.set(DamageType.PUNCTURE, parseFloat(puncture));
         return this;
     }
 
     setSlash(slash) {
-        this[DamageType.SLASH] = parseFloat(slash);
+        this.set(DamageType.SLASH, parseFloat(slash));
         return this;
     }
 
     setCold(cold) {
-        this[DamageType.COLD] = parseFloat(cold);
+        this.set(DamageType.COLD, parseFloat(cold));
         return this;
     }
 
     setElectric(electric) {
-        this[DamageType.ELECTRIC] = parseFloat(electric);
+        this.set(DamageType.ELECTRIC, parseFloat(electric));
         return this;
     }
 
     setHeat(heat) {
-        this[DamageType.HEAT] = parseFloat(heat);
+        this.set(DamageType.HEAT, parseFloat(heat));
         return this;
     }
 
     setToxin(toxin) {
-        this[DamageType.TOXIN] = parseFloat(toxin);
+        this.set(DamageType.TOXIN, parseFloat(toxin));
         return this;
     }
 
     setBlast(blast) {
-        this[DamageType.BLAST] = parseFloat(blast);
+        this.set(DamageType.BLAST, parseFloat(blast));
         return this;
     }
 
     setCorrosive(corrosive) {
-        this[DamageType.CORROSIVE] = parseFloat(corrosive);
+        this.set(DamageType.CORROSIVE, parseFloat(corrosive));
         return this;
     }
 
     setGas(gas) {
-        this[DamageType.GAS] = parseFloat(gas);
+        this.set(DamageType.GAS, parseFloat(gas));
         return this;
     }
 
     setMagnetic(magnetic) {
-        this[DamageType.MAGNETIC] = parseFloat(magnetic);
+        this.set(DamageType.MAGNETIC, parseFloat(magnetic));
         return this;
     }
 
     setRadiation(radiation) {
-        this[DamageType.RADIATION] = parseFloat(radiation);
+        this.set(DamageType.RADIATION, parseFloat(radiation));
         return this;
     }
 
     setViral(viral) {
-        this[DamageType.VIRAL] = parseFloat(viral);
+        this.set(DamageType.VIRAL, parseFloat(viral));
         return this;
     }
 
     setTrue(trueD) {
-        this[DamageType.TRUE] = parseFloat(trueD);
+        this.set(DamageType.TRUE, parseFloat(trueD));
         return this;
     }
 
     setVoid(voidD) {
-        this[DamageType.VOID] = parseFloat(voidD);
+        this.set(DamageType.VOID, parseFloat(voidD));
         return this;
     }
 

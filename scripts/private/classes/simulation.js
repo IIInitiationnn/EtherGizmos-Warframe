@@ -1,6 +1,6 @@
 const {SimulationSettings} = require('../classes/simulation-settings');
-const {EnemyInstance} = require('../classes/enemy-instance');
-const {WeaponInstance} = require('../classes/weapon-instance');
+const {EnemyInstance} = require('../classes/enemy');
+const {WeaponInstance} = require('../classes/weapon');
 const {Metrics} = require('../classes/metrics');
 const {DynamicPool} = require('node-worker-threads-pool');
 const dynamicPool = new DynamicPool(8);
@@ -68,8 +68,8 @@ async function executeSimulation(param) {
 
     // are these paths relative to the script that is run??
     const {SimulationSettings} = require('../classes/simulation-settings');
-    const {EnemyInstance} = require('../classes/enemy-instance');
-    const {WeaponInstance} = require('../classes/weapon-instance');
+    const {EnemyInstance} = require('../classes/enemy');
+    const {WeaponInstance} = require('../classes/weapon');
     const {Metrics} = require('../classes/metrics');
     const {shoot} = require('../classes/simulation');
 
@@ -189,7 +189,6 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
     // Internal Bleeding (chance is independent of pellet)
     // TODO cannot produce multiple procs in a single instance of damage alongside any other slash sources
     let internalBleedingChance = weaponInstance.getInternalBleedingEffect();
-    if (fireRate < 2.5) internalBleedingChance *= 2;
 
     let damage = weaponInstance.getDamage(); // will not change for each pellet
 
@@ -200,6 +199,15 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
     let healthType = enemyInstance.enemy.healthType;
     let armorType = enemyInstance.enemy.armorType;
     let shieldType = enemyInstance.enemy.shieldType;
+
+    // Damage modifier for type-specific health and armor resistances
+    let damageToHealth = damage.afterHealthResistances(healthType)
+        .afterArmorTypeResistances(armorType)
+
+    // Damage modifier for type-specific shield resistances
+    let damageToShield = damage.afterShieldResistances(shieldType);
+
+    // TODO toxin ignores shields
 
     for (let i = 0; i < numPellets; i++) {
         if (!enemyInstance.isAlive()) break;
@@ -255,15 +263,12 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         damageMultiplier *= criticalHeadshotMultiplier;
         damageMultiplier *= weaponInstance.getFactionMultiplier();
         // any other multipliers go here...
-        let multipliedDamage = damage.multiply(damageMultiplier);
         //console.log('moddedDamageBeforeMultipliers:', damage)
         //console.log('afterCritsHeadshotsFactionEtc:', multipliedDamage)
 
         // Total damage to be done to shields, if there are any shields
         if (enemyInstance.hasShields()) {
-            // Damage modifier for type-specific shield resistances
-            let shieldDamage = multipliedDamage.afterShieldResistances(shieldType);
-            let amtDmgToShields = shieldDamage.totalBaseDamage();
+            let amtDmgToShields = damageToShield.multiply(damageMultiplier).totalBaseDamage();
 
             // Deal the damage to the shields
             let dealtDamage = enemyInstance.damageShield(amtDmgToShields);
@@ -271,7 +276,6 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
             // Calculate how much more damage needs to be done to health
             let proportionOfDamageDealt = dealtDamage / amtDmgToShields;
             remainingDamage -= proportionOfDamageDealt;
-
 
             // All shields gone from this hit
             if (!enemyInstance.hasShields()) {
@@ -284,21 +288,12 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
             // See https://warframe.fandom.com/wiki/Damage#Damage_Calculation and
             // https://warframe.fandom.com/wiki/Armor for more detailed explanations.
             // If x% of the damage was dealt to the shields, (100-x)% of the damage will be dealt to health.
-            let healthDamage = multipliedDamage.multiply(remainingDamage)
-
-                // Damage modifier for type-specific health and armor resistances
-                .afterHealthResistances(healthType)
-                .afterArmorTypeResistances(armorType)
-
+            let shieldGatingMultiplier = enemyInstance.isShieldGated() && !isHeadshot ? 0.05 : 1;
+            //console.log('shield gating:', shieldGatingMultiplier);
+            let healthDamage =damageToHealth.multiply(damageMultiplier * shieldGatingMultiplier * remainingDamage)
                 // General armor damage reduction = Net Armor / (Net Armor + 300)
                 // so multiplier = 1 - reduction = 300 / (Net Armor + 300)
                 .afterNetArmorResistances(armorType, enemyInstance.getArmor());
-
-            // Shield gating: not affected by headshots
-            if (enemyInstance.isShieldGated() && !isHeadshot) {
-                //console.log('shield gating active')
-                healthDamage = healthDamage.multiply(0.05);
-            }
 
             //console.log('healthDamage after all calculations:', healthDamage)
             let amtDmgToHealth = healthDamage.totalBaseDamage();

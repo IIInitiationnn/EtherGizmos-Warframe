@@ -1,4 +1,5 @@
 const {WeaponDamage} = require("./weapon-damage");
+const {reviver} = require('./map-util');
 
 class WeaponResiduals {
     constructor() {
@@ -16,7 +17,7 @@ class WeaponResiduals {
      * @param {string} object
      */
     static fromObject(object) {
-        let plainObject = JSON.parse(object);
+        let plainObject = JSON.parse(object, reviver);
         Object.setPrototypeOf(plainObject.originalBaseDamage, WeaponDamage.prototype)
         return Object.setPrototypeOf(plainObject, WeaponResiduals.prototype)
     }

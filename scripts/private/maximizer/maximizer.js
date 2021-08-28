@@ -1,15 +1,13 @@
 const {Metrics} = require('../classes/metrics');
-const {EnemyInstance} = require('../classes/enemy-instance');
-const {Weapon} = require('../classes/weapon');
-const {Enemy} = require('../classes/enemy');
-const {Mod} = require('../classes/mod');
+const {Weapon, WeaponInstance} = require('../classes/weapon');
+const {Enemy, EnemyInstance} = require('../classes/enemy');
+const {Mod, ModInstance} = require('../classes/mod');
 const {Simulation} = require('../classes/simulation')
 const {SimulationSettings} = require('../classes/simulation-settings')
 const {runSimulation} = require('./simulation-worker');
-const {WeaponInstance} = require('../classes/weapon-instance');
 
 const enableLogging = true;
-const numEnemies = 500;
+const numEnemies = 50;
 const enemyLevel = 150; // TODO maybe just sample on 100 SUPER high level enemies to measure actual substantial differences in performance as you scale up
 
 /* TODO
@@ -60,16 +58,16 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables, fir
         let results = mean(await queueSimulation(weaponModded, enemies));
         console.log(build, results);
     }*/
-    /* let testMods = ['primed-bane-of-corrupted', 'split-chamber', 'vital-sense', 'serration', 'hunter-munitions', 'point-strike', 'primed-cryo-rounds', 'malignant-force']
+    let testMods = ['primed-bane-of-corrupted', 'split-chamber', 'vital-sense', 'serration', 'hunter-munitions', 'point-strike', 'primed-cryo-rounds', 'malignant-force']
     let actualMods = [];
     for (let modId of testMods) {
-        actualMods.push(await Mod.fromID(modId));
+        actualMods.push(await ModInstance.fromModID(modId));
     }
-    weaponInstance.setMods(actualMods);*/
+    weaponInstance.setMods(actualMods);
 
     // Threshold Acceptance with Temperature Correlated with Quality
     // Pick a random set of 8 mods
-    let currentMods = getRandomMods(validModsList, weaponInstance, true);
+    //let currentMods = getRandomMods(validModsList, weaponInstance, true);
     let simulation = new Simulation(weaponInstance, [enemyInstance], simulationSettings);
     weaponInstance.logMods();
     let metrics = (await simulation.run())[0]; // returns Metrics[][], we seek Metrics[] which contains one Metrics for each iteration of the enemy type
@@ -77,7 +75,7 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables, fir
 
     let x = []
     for (let metric of metrics) x.push((metric.killTime))
-    console.log(x);
+    console.log(x.toString());
     console.log(currentResults);
     return;
 
@@ -88,7 +86,7 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables, fir
     if (enableLogging) console.log('Maximization for:', weapon.Name);
     if (enableLogging) console.log('Initial state:', currentMods, currentResults);
 
-    let numSamples = 500;
+    let numSamples = 100;
     let maxIterations = 7500;
     let temperatureSample = await new Promise((resolve) => {
         let temperatures = [];
@@ -189,16 +187,16 @@ function thresholdAcceptance(newResults, currentResults, temperature) {
  * @param {Mod[]} validModsList
  * @param {WeaponInstance} weaponInstance
  * @param {boolean} updateWeapon - Whether or not to set the weapon instance's mods to the random mods found.
- * @returns {Mod[]} - List of the random mods.
+ * @returns {ModInstance[]} - List of the random mods.
  */
 function getRandomMods(validModsList, weaponInstance, updateWeapon) {
     let randomMods = [];
     for (let i = 0; i < 8; i++) {
-        let modID = validModsList[Math.floor(Math.random() * validModsList.length)];
-        while (!isCompatible(randomMods, modID)) {
-            modID = validModsList[Math.floor(Math.random() * validModsList.length)];
+        let newMod = new ModInstance(validModsList[Math.floor(Math.random() * validModsList.length)]);
+        while (!isCompatible(randomMods, newMod)) {
+            newMod = new ModInstance(validModsList[Math.floor(Math.random() * validModsList.length)]);
         }
-        randomMods.push(modID);
+        randomMods.push(newMod);
     }
     if (updateWeapon) weaponInstance.setMods(randomMods);
     return randomMods;
@@ -261,20 +259,19 @@ async function queueSimulation(weapon, enemies) {
 
 /**
  *
- * @param existingMods
- * @param newMod
+ * @param {ModInstance[]} existingMods
+ * @param {ModInstance} newMod
  * @returns {boolean}
  */
 function isCompatible(existingMods, newMod) {
-    if (existingMods.includes(newMod)) {
-        return false;
-    }
-    let s = 'serration';
+    for (let mod of existingMods) if (mod.getMod().getID() === newMod.getMod().getID()) return false;
+
+    /*let s = 'serration';
     let aS = 'amalgam-serration';
     let serrations = [s, aS];
     if ((existingMods.includes(s) || existingMods.includes(aS)) && serrations.includes(newMod)) {
         return false;
-    }
+    }*/
     return true; // TODO change to check for incompatibility instead, would be Mod.isCompatibleWithMods, same signature
 }
 
