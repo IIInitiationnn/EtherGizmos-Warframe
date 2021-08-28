@@ -81,7 +81,6 @@ async function executeSimulation(param) {
 
     let metrics = new Metrics();
     let timeElapsed = 0;
-    let shotCount = 0;
     //console.log('initial enemy status:', enemyInstance);
 
     while (enemyInstance.isAlive() && timeElapsed < maxSimulationDuration) {
@@ -100,10 +99,10 @@ async function executeSimulation(param) {
         // TODO work out if its 1hit 2proc 3hit 4proc or 1hit 2residual 3hitproc 4residualproc
         //  if the latter (which i suspect) we will need to simply keep a record of the procs and add them after
         //  so itd be like 1hit (save procs), 2hitresiduals (save procs), 3 add the procs, 4 add the procs, 5 calculate damage of procs
+        //  did some testing and it could be the former but would need to use numbers to be certain
         // Shoot the enemy, or wait until you can. - inherently handles adding procs
         if (weaponInstance.canShoot()) {
             await shoot(weaponInstance, enemyInstance, metrics, simulationSettings);
-            shotCount++;
 
             /*//Keep track of metrics from the shot
             let hitCount = 0;
@@ -148,6 +147,7 @@ async function executeSimulation(param) {
 
     }
     //console.log('final kill time:', timeElapsed);
+    //console.log(enemyInstance.procs);
     metrics.setKillTime(timeElapsed);
     return metrics;
 }
@@ -169,16 +169,24 @@ function happens(chance) {
  * @param {SimulationSettings} simulationSettings
  */
 async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings) {
+    const {Proc} = require('../classes/proc');
     // Multishot
     let numPellets = weaponInstance.getPellets();
 
     let isExtraPellet = happens(numPellets - Math.floor((numPellets)));
     if (isExtraPellet) numPellets++;
+    numPellets = Math.floor(numPellets);
 
     // Critical chance
     let overallCritChance = weaponInstance.getCriticalChance();
     let critTier = Math.floor(overallCritChance);
     let critChance = overallCritChance - critTier;
+
+    // Status chance
+    let overallStatChance = weaponInstance.getStatusChance();
+    let statTier = Math.floor(overallStatChance);
+    let statChance = overallStatChance - statTier;
+    let procs = [];
 
     // Ammo consumption NVM ammo consumption is not chance based
     //let ammoConsumed = happens(weaponInstance.getAmmoConsumption());
@@ -201,6 +209,7 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
     let shieldType = enemyInstance.enemy.shieldType;
 
     // Damage modifier for type-specific health and armor resistances
+    // TODO note: does not consider total armor strip (in which case afterArmorTypeResistances should not be applied)
     let damageToHealth = damage.afterHealthResistances(healthType)
         .afterArmorTypeResistances(armorType)
 
@@ -208,6 +217,10 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
     let damageToShield = damage.afterShieldResistances(shieldType);
 
     // TODO toxin ignores shields
+
+    let magneticMultiplier = enemyInstance.getMagneticMultiplier();
+    let viralMultiplier = enemyInstance.getViralMultiplier();
+
 
     for (let i = 0; i < numPellets; i++) {
         if (!enemyInstance.isAlive()) break;
@@ -217,6 +230,11 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
 
         // Critical hit
         let isExtraCritical = happens(critChance);
+
+        // Statuses
+        for (let statusType of damage.randomStatus(statTier + happens(statChance) ? 1 : 0)) {
+            procs.push(new Proc(statusType));
+        }
 
         // Headshot
         let isHeadshot = happens(simulationSettings.headshot);
@@ -250,8 +268,6 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         //  Due to Multishot increasing both per-tick damage and status chance, status damage
         //  is affected twice by multishot on all continuous weapons.
         //  so each tick rolls status chance and crit chance, which can be increased by multishot.
-
-        // TODO handle all procs eg magnetic amps shield damage, viral amps health damage
 
         // Percentage of remaining damage to be dealt
         let remainingDamage = 1;
@@ -290,7 +306,8 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
             // If x% of the damage was dealt to the shields, (100-x)% of the damage will be dealt to health.
             let shieldGatingMultiplier = enemyInstance.isShieldGated() && !isHeadshot ? 0.05 : 1;
             //console.log('shield gating:', shieldGatingMultiplier);
-            let healthDamage =damageToHealth.multiply(damageMultiplier * shieldGatingMultiplier * remainingDamage)
+            let multipliers = viralMultiplier * damageMultiplier * shieldGatingMultiplier * remainingDamage;
+            let healthDamage = damageToHealth.multiply(multipliers)
                 // General armor damage reduction = Net Armor / (Net Armor + 300)
                 // so multiplier = 1 - reduction = 300 / (Net Armor + 300)
                 .afterNetArmorResistances(armorType, enemyInstance.getArmor());
@@ -301,43 +318,44 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
             // Deal the damage to health
             enemyInstance.damageHealth(amtDmgToHealth);
         }
+
         /*
-                // TODO Record procs from status chance, then apply them after all the pellets, and after residuals
+        // Below is the additional procs
 
-                // Below is the additional procs
+        // Hunter Munitions
+        // TODO Cannot produce multiple procs in a single instance of damage alongside forced Slash from sources
+        //  such as Internal Bleeding or the debuff from Seeking Talons, but can stack with
+        //  Slash statuses applied using a weapon's innate status chance.
+        let isHunterMunitions = critOccurred && happens(weaponInstance.getHunterMunitionsEffect());
 
-                // Hunter Munitions
-                // TODO Cannot produce multiple procs in a single instance of damage alongside forced Slash from sources
-                //  such as Internal Bleeding or the debuff from Seeking Talons, but can stack with
-                //  Slash statuses applied using a weapon's innate status chance.
-                let isHunterMunitions = critOccurred && happens(weaponInstance.getHunterMunitionsEffect());
+        // TODO first calculate regular slash from status, then hunter, then if nothing happens from either, try internal bleeding
+        //  may need to calculate after the pellet loop
+        let isInternalBleeding = false;
 
-                // TODO first calculate regular slash from status, then hunter, then if nothing happens from either, try internal bleeding
-                //  may need to calculate after the pellet loop
-                let isInternalBleeding = false;
+        //Do procs for this pellet
+        let procs = $_DoProcs(this.Weapon.Damage, statusChance, rngHandler, remainChance, '');
 
-                //Do procs for this pellet
-                let procs = $_DoProcs(this.Weapon.Damage, statusChance, rngHandler, remainChance, '');
+        //If Hunter Munitions proc'd and the shot was a crit, apply a slash proc
+        if (hunterChance.Result.HunterMunitions && (remainChance.Result.Critical || criticalLevel > 0)) {
+            procs.push($Classes.DamageType.SLASH);
+        }
 
-                //If Hunter Munitions proc'd and the shot was a crit, apply a slash proc
-                if (hunterChance.Result.HunterMunitions && (remainChance.Result.Critical || criticalLevel > 0)) {
+        //Loop through the procs and roll Internal Bleeding for every impact proc
+        for (let pe = 0; pe < procs.length; pe++) {
+            if (procs[pe] === $Classes.DamageType.IMPACT) {
+                let internalBleedingChance = vigilanteChance
+                    .Chance(internalBleedingChanceChance, 'InternalBleeding');
+
+                if (internalBleedingChance.Result.InternalBleeding) {
                     procs.push($Classes.DamageType.SLASH);
                 }
-
-                //Loop through the procs and roll Internal Bleeding for every impact proc
-                for (let pe = 0; pe < procs.length; pe++) {
-                    if (procs[pe] === $Classes.DamageType.IMPACT) {
-                        let internalBleedingChance = vigilanteChance
-                            .Chance(internalBleedingChanceChance, 'InternalBleeding');
-
-                        if (internalBleedingChance.Result.InternalBleeding) {
-                            procs.push($Classes.DamageType.SLASH);
-                        }
-                    }
-                }*/
+            }
+        }*/
 
 
     }
+
+    enemyInstance.addProcs(procs);
 
     // Consume ammo
     weaponInstance.remainingMagazine -= weaponInstance.getAmmoConsumption();
@@ -350,6 +368,9 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         weaponInstance.remainingReloadDuration = weaponInstance.getReloadDuration();
         //this.CurrentChargeDelay = this.ChargeDelay;
     }
+
+    metrics.addPelletsFired(numPellets);
+    metrics.addShotsFired(1);
 
     //console.log('remaining magazine:', weaponInstance.remainingMagazine);
 

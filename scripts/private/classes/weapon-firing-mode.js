@@ -1,6 +1,6 @@
 const {WeaponResiduals} = require('./weapon-residuals');
 const {WeaponDamage} = require('./weapon-damage');
-const {reviver} = require('./map-util');
+const {replacer, reviver} = require('./map-util');
 
 /**
  * Contains the stats for the firing mode of a weapon.
@@ -30,7 +30,7 @@ class WeaponFiringMode {
         let plainObject = JSON.parse(object, reviver);
 
         Object.setPrototypeOf(plainObject.originalBaseDamage, WeaponDamage.prototype);
-        plainObject.residuals = WeaponResiduals.fromObject(JSON.stringify(plainObject.residuals));
+        plainObject.residuals = WeaponResiduals.fromObject(JSON.stringify(plainObject.residuals, replacer));
 
         return Object.setPrototypeOf(plainObject, WeaponFiringMode.prototype);
     }

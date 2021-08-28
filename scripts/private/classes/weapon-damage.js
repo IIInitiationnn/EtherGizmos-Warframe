@@ -64,6 +64,26 @@ class WeaponDamage extends Map {
     }
 
     /**
+     * Randomly select status effect(s) using this damage distribution.
+     * @returns {DamageType[]}
+     */
+    randomStatus(num = 1) {
+        let statuses = [];
+        for (let i = 0; i < num; i++) {
+            let total = 0;
+            let target = Math.random() * this.totalBaseDamage();
+            for (let [damageType, damageValue] of this.entries()) {
+                total += damageValue;
+                if (total >= target) {
+                    statuses.push(damageType);
+                    break;
+                }
+            }
+        }
+        return statuses;
+    }
+
+    /**
      *
      * @param {ResistanceType} healthType
      * @returns {WeaponDamage}
@@ -92,6 +112,7 @@ class WeaponDamage extends Map {
         return damageAfterResistances;
     }
 
+    // TODO note: does not consider complete armor strip
     /**
      *
      * @param {ResistanceType} armorType

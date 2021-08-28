@@ -2,7 +2,7 @@ const {WeaponFiringMode} = require('./weapon-firing-mode');
 const {Mod, ModInstance} = require('./mod');
 const {ModEffectType, isPrimaryElement, elementalModEffectToDamage, elementalModEffectTypes} = require('./magic-types');
 const {WeaponDamage} = require('./weapon-damage');
-const {replacer} = require('./map-util');
+const {replacer, reviver} = require('./map-util');
 
 class Weapon {
     constructor() {
@@ -27,11 +27,11 @@ class Weapon {
      * @returns {Weapon}
      */
     static fromObject(object) {
-        let plainObject = JSON.parse(object);
+        let plainObject = JSON.parse(object, reviver);
 
         // Custom class object
         for (let i = 0; i < plainObject.firingModes.length; i++) {
-            plainObject.firingModes[i] = WeaponFiringMode.fromObject(JSON.stringify(plainObject.firingModes[i]));
+            plainObject.firingModes[i] = WeaponFiringMode.fromObject(JSON.stringify(plainObject.firingModes[i], replacer));
         }
 
         return Object.setPrototypeOf(plainObject, Weapon.prototype)
@@ -170,11 +170,11 @@ class WeaponInstance {
      * @returns {WeaponInstance}
      */
     static fromObject(object) {
-        let plainObject = JSON.parse(object);
+        let plainObject = JSON.parse(object, reviver);
 
-        plainObject.weapon = Weapon.fromObject(JSON.stringify(plainObject.weapon))
+        plainObject.weapon = Weapon.fromObject(JSON.stringify(plainObject.weapon, replacer))
         for (let i = 0; i < plainObject.modInstances.length; i++) {
-            plainObject.modInstances[i] = ModInstance.deserialize(JSON.stringify(plainObject.modInstances[i]));
+            plainObject.modInstances[i] = ModInstance.deserialize(JSON.stringify(plainObject.modInstances[i], replacer));
         }
 
         return Object.setPrototypeOf(plainObject, WeaponInstance.prototype)

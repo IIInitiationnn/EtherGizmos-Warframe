@@ -29,7 +29,7 @@ class Mod {
      * @returns {string}
      */
     serialize() {
-        return JSON.stringify(this)
+        return JSON.stringify(this, replacer);
     }
 
     /**
@@ -257,8 +257,8 @@ class ModInstance {
      * @returns {Mod}
      */
     static deserialize(object) {
-        let plainObject = JSON.parse(object);
-        plainObject.mod = Mod.deserialize(JSON.stringify(plainObject.mod));
+        let plainObject = JSON.parse(object, reviver);
+        plainObject.mod = Mod.deserialize(JSON.stringify(plainObject.mod, replacer));
         return Object.setPrototypeOf(plainObject, this.prototype)
     }
 

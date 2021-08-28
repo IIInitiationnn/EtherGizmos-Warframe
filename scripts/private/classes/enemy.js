@@ -1,3 +1,5 @@
+const {DamageType} = require('./magic-types');
+const {Proc} = require('./proc');
 const {ResistanceType} = require('./resistance-type');
 const {replacer, reviver} = require('./map-util');
 
@@ -183,6 +185,9 @@ class EnemyInstance {
 
         /** @type {Map<DamageType, Proc[]>} - Active procs on the enemy, organised into lists by type */
         this.procs = new Map();
+        for (let [dummy, damageType] of Object.entries(DamageType)) {
+            this.procs.set(damageType, []);
+        }
 
         /** @type {number} - How long the enemy is shield gated for */
         this.shieldGatedDuration = 0;
@@ -202,14 +207,11 @@ class EnemyInstance {
      * @returns {EnemyInstance}
      */
     static fromObject(object) {
-        let plainObject = JSON.parse(object);
+        let plainObject = JSON.parse(object, reviver);
 
-        plainObject.enemy = Enemy.fromObject(JSON.stringify(plainObject.enemy))
-        for (let i = 0; i < plainObject.procs.length; i++) {
-            plainObject.procs[i] = Proc.fromObject(JSON.stringify(plainObject.procs[i]));
-        }
+        plainObject.enemy = Enemy.fromObject(JSON.stringify(plainObject.enemy, replacer));
 
-        return Object.setPrototypeOf(plainObject, EnemyInstance.prototype)
+        return Object.setPrototypeOf(plainObject, EnemyInstance.prototype);
     }
 
     static transitionPercentage(levelDiff) {
@@ -298,11 +300,10 @@ class EnemyInstance {
         return actualDamage;
     }
 
-    // TODO corrosive procs and other modifiers
     // https://warframe.fandom.com/wiki/Damage#Damage_Calculation
     // Equivalent to AR in the formula in the above link
     getArmor() {
-        return this.armor;
+        return this.armor * this.getCorrosiveMultiplier();
     }
 
     getCurrentShield() {
@@ -319,6 +320,104 @@ class EnemyInstance {
         let actualDamage = Math.min(dmg, this.currentShield);
         this.currentShield -= actualDamage;
         return actualDamage;
+    }
+
+    /**
+     * Adds new procs to the enemy and removes extra procs for certain statuses to ensure their caps of 10.
+     * These are: Impact, Puncture, Cold, Blast, Corrosive, Gas, Magnetic, Radiation, Viral.
+     * @param {Proc[]} procs - list of new procs
+     * @returns {EnemyInstance}
+     */
+    addProcs(procs) {
+        for (let proc of procs) {
+            this.procs.get(proc.getDamageType()).push(proc);
+        }
+        return this.capExtraProcs();
+    }
+
+    /**
+     * Remove all extra procs so that there are only 10 procs for certain status effects.
+     * These are: Impact, Puncture, Cold, Blast, Corrosive, Gas, Magnetic, Radiation, Viral.
+     * @returns {EnemyInstance}
+     */
+    capExtraProcs() {
+        // Impact
+        let numImpact = this.procs.get(DamageType.IMPACT).length;
+        if (numImpact > 10) {
+            this.procs.get(DamageType.IMPACT).splice(0, numImpact - 10);
+        }
+
+        // Puncture
+        let numPuncture = this.procs.get(DamageType.PUNCTURE).length;
+        if (numPuncture > 10) {
+            this.procs.get(DamageType.PUNCTURE).splice(0, numPuncture - 10);
+        }
+
+        // Cold
+        let numCold = this.procs.get(DamageType.COLD).length;
+        if (numCold > 10) {
+            this.procs.get(DamageType.COLD).splice(0, numCold - 10);
+        }
+
+        // Blast
+        let numBlast = this.procs.get(DamageType.BLAST).length;
+        if (numBlast > 10) {
+            this.procs.get(DamageType.BLAST).splice(0, numBlast - 10);
+        }
+
+        // Corrosive
+        let numCorrosive = this.procs.get(DamageType.CORROSIVE).length;
+        if (numCorrosive > 10) {
+            this.procs.get(DamageType.CORROSIVE).splice(0, numCorrosive - 10);
+        }
+
+        // Gas
+        let numGas = this.procs.get(DamageType.GAS).length;
+        if (numGas > 10) {
+            this.procs.get(DamageType.GAS).splice(0, numGas - 10);
+        }
+
+        // Magnetic
+        let numMagnetic = this.procs.get(DamageType.MAGNETIC).length;
+        if (numMagnetic > 10) {
+            this.procs.get(DamageType.MAGNETIC).splice(0, numMagnetic - 10);
+        }
+
+        // Radiation
+        let numRadiation = this.procs.get(DamageType.RADIATION).length;
+        if (numRadiation > 10) {
+            this.procs.get(DamageType.RADIATION).splice(0, numRadiation - 10);
+        }
+
+        // Viral
+        let numViral = this.procs.get(DamageType.VIRAL).length;
+        if (numViral > 10) {
+            this.procs.get(DamageType.VIRAL).splice(0, numViral - 10);
+        }
+        return this;
+    }
+
+    /*TODO
+        slash (bleed)
+        heat (ignite) - status duration will affect how long it takes to reach full armor strip
+        electricity (tesla chain)
+        toxin (poison)
+        gas (gas cloud)
+     */
+
+    getCorrosiveMultiplier() {
+        let numCorrosiveProcs = this.procs.get(DamageType.CORROSIVE).length;
+        return (numCorrosiveProcs === 0) ? 1 : 0.8 - 0.06 * numCorrosiveProcs;
+    }
+
+    getMagneticMultiplier() {
+        let numMagneticProcs = this.procs.get(DamageType.MAGNETIC).length;
+        return (numMagneticProcs === 0) ? 1 : 1.75 + 0.25 * numMagneticProcs;
+    }
+
+    getViralMultiplier() {
+        let numViralProcs = this.procs.get(DamageType.VIRAL).length;
+        return (numViralProcs === 0) ? 1 : 1.75 + 0.25 * numViralProcs;
     }
 
     /**

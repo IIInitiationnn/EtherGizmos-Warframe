@@ -36,6 +36,11 @@ class Metrics {
         return this.pelletsFired;
     }
 
+    addPelletsFired(pelletsFired) {
+        this.pelletsFired += pelletsFired;
+        return this;
+    }
+
     setPelletsFired(pelletsFired) {
         this.pelletsFired = pelletsFired;
         return this;

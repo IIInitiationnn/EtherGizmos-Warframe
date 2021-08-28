@@ -1,3 +1,5 @@
+const {replacer, reviver} = require('./map-util');
+
 class SimulationSettings {
     /**
      * Returns a SimulationSettings object supplied with accuracy (between 0 and 1),
@@ -17,7 +19,7 @@ class SimulationSettings {
      * @returns {string}
      */
     toObject() {
-        return JSON.stringify(this);
+        return JSON.stringify(this, replacer);
     }
 
     /**
@@ -26,7 +28,7 @@ class SimulationSettings {
      * @returns {SimulationSettings}
      */
     static fromObject(object) {
-        let plainObject = JSON.parse(object);
+        let plainObject = JSON.parse(object, reviver);
         return Object.setPrototypeOf(plainObject, SimulationSettings.prototype)
     }
 

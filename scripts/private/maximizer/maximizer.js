@@ -74,7 +74,9 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables, fir
     let currentResults = Metrics.meanKillTime(metrics);
 
     let x = []
-    for (let metric of metrics) x.push((metric.killTime))
+    for (let metric of metrics) {
+        x.push(metric.killTime);
+    }
     console.log(x.toString());
     console.log(currentResults);
     return;
