@@ -1,7 +1,8 @@
-const {SimulationSettings} = require('../classes/simulation-settings');
-const {EnemyInstance} = require('../classes/enemy');
-const {WeaponInstance} = require('../classes/weapon');
-const {Metrics} = require('../classes/metrics');
+const {SimulationSettings} = require('./simulation-settings');
+const {EnemyInstance} = require('./enemy');
+const {WeaponInstance} = require('./weapon');
+const {Metrics} = require('./metrics');
+const {Proc} = require('./proc')
 const {DynamicPool} = require('node-worker-threads-pool');
 const dynamicPool = new DynamicPool(8);
 
@@ -138,8 +139,8 @@ async function executeSimulation(param) {
         // TODO Handle effects of residuals e.g. Shedu electricity explosion damage - also handles procs
 
 
-        // TODO Calculate damage caused by procs?? not sure if can be done in shoot() loop
-
+        // TODO deal damage from procs, similar to the process of dealing damage in shoot()
+        enemyInstance.removeExpiredProcs();
 
         // TODO Calculate residual procs ??? can be merged with above or not? no idea what this involves
 
@@ -169,7 +170,7 @@ function happens(chance) {
  * @param {SimulationSettings} simulationSettings
  */
 async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings) {
-    const {Proc} = require('../classes/proc');
+    const {Proc} = require('./proc');
     // Multishot
     let numPellets = weaponInstance.getPellets();
 
@@ -231,11 +232,6 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         // Critical hit
         let isExtraCritical = happens(critChance);
 
-        // Statuses
-        for (let statusType of damage.randomStatus(statTier + happens(statChance) ? 1 : 0)) {
-            procs.push(new Proc(statusType));
-        }
-
         // Headshot
         let isHeadshot = happens(simulationSettings.headshot);
 
@@ -248,7 +244,7 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         // If it was not a critical hit at all, critOccurred will be false
         let critOccurred = critTier !== 0;
 
-        // TODO Critical headshots (dependent on enemy, refer to wiki)
+        // TODO Critical headshots (dependent on enemy, refer to wiki) also kind of confusing
         let criticalHeadshotMultiplier = critOccurred && isHeadshot ? 2 : 1;
 
         // Vigilante set critical chance
@@ -273,18 +269,18 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         let remainingDamage = 1;
 
         // Damage multipliers
-        let damageMultiplier = 1;
-        damageMultiplier *= 1 + (critTierPellet * (weaponInstance.getCriticalMultiplier() - 1)); // crit
-        damageMultiplier *= isHeadshot ? weaponInstance.getHeadshotMultiplier(enemyInstance.enemy.headshotMultiplier) : 1; // headshot
-        damageMultiplier *= criticalHeadshotMultiplier;
-        damageMultiplier *= weaponInstance.getFactionMultiplier();
+        let critMultiplier = 1 + (critTierPellet * (weaponInstance.getCriticalMultiplier() - 1));
+        let headMultiplier = isHeadshot ? weaponInstance.getHeadshotMultiplier(enemyInstance.enemy.headshotMultiplier) : 1;
+        let factionMultiplier = weaponInstance.getFactionMultiplier();
+
+        let damageMultiplier = critMultiplier * headMultiplier * criticalHeadshotMultiplier * factionMultiplier;
         // any other multipliers go here...
         //console.log('moddedDamageBeforeMultipliers:', damage)
         //console.log('afterCritsHeadshotsFactionEtc:', multipliedDamage)
 
         // Total damage to be done to shields, if there are any shields
         if (enemyInstance.hasShields()) {
-            let amtDmgToShields = damageToShield.multiply(damageMultiplier).totalBaseDamage();
+            let amtDmgToShields = damageToShield.multiply(magneticMultiplier * damageMultiplier).totalBaseDamage();
 
             // Deal the damage to the shields
             let dealtDamage = enemyInstance.damageShield(amtDmgToShields);
@@ -319,42 +315,50 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
             enemyInstance.damageHealth(amtDmgToHealth);
         }
 
-        /*
-        // Below is the additional procs
-
-        // Hunter Munitions
-        // TODO Cannot produce multiple procs in a single instance of damage alongside forced Slash from sources
-        //  such as Internal Bleeding or the debuff from Seeking Talons, but can stack with
-        //  Slash statuses applied using a weapon's innate status chance.
-        let isHunterMunitions = critOccurred && happens(weaponInstance.getHunterMunitionsEffect());
-
-        // TODO first calculate regular slash from status, then hunter, then if nothing happens from either, try internal bleeding
-        //  may need to calculate after the pellet loop
-        let isInternalBleeding = false;
-
-        //Do procs for this pellet
-        let procs = $_DoProcs(this.Weapon.Damage, statusChance, rngHandler, remainChance, '');
-
-        //If Hunter Munitions proc'd and the shot was a crit, apply a slash proc
-        if (hunterChance.Result.HunterMunitions && (remainChance.Result.Critical || criticalLevel > 0)) {
-            procs.push($Classes.DamageType.SLASH);
+        // Statuses
+        //  TODO now sure how headmultipliers work into this
+        let statusDamage = weaponInstance.getModdedBaseDamage().totalBaseDamage() * factionMultiplier * factionMultiplier * critMultiplier * headMultiplier;
+        for (let statusType of damage.randomStatus(statTier + happens(statChance) ? 1 : 0)) {
+            procs.push(new Proc(statusType, statusDamage, weaponInstance));
         }
-
-        //Loop through the procs and roll Internal Bleeding for every impact proc
-        for (let pe = 0; pe < procs.length; pe++) {
-            if (procs[pe] === $Classes.DamageType.IMPACT) {
-                let internalBleedingChance = vigilanteChance
-                    .Chance(internalBleedingChanceChance, 'InternalBleeding');
-
-                if (internalBleedingChance.Result.InternalBleeding) {
-                    procs.push($Classes.DamageType.SLASH);
-                }
-            }
-        }*/
-
-
     }
 
+    // TODO residuals
+
+    /*
+    // Below is the additional procs, after all damage instances considered
+
+    // Hunter Munitions
+    // TODO Cannot produce multiple procs in a single instance of damage alongside forced Slash from sources
+    //  such as Internal Bleeding or the debuff from Seeking Talons, but can stack with
+    //  Slash statuses applied using a weapon's innate status chance.
+    let isHunterMunitions = critOccurred && happens(weaponInstance.getHunterMunitionsEffect());
+
+    // TODO first calculate regular slash from status, then hunter, then if nothing happens from either, try internal bleeding
+    //  may need to calculate after the pellet loop
+    let isInternalBleeding = false;
+
+    //Do procs for this pellet
+    let procs = $_DoProcs(this.Weapon.Damage, statusChance, rngHandler, remainChance, '');
+
+    //If Hunter Munitions proc'd and the shot was a crit, apply a slash proc
+    if (hunterChance.Result.HunterMunitions && (remainChance.Result.Critical || criticalLevel > 0)) {
+        procs.push($Classes.DamageType.SLASH);
+    }
+
+    //Loop through the procs and roll Internal Bleeding for every impact proc
+    for (let pe = 0; pe < procs.length; pe++) {
+        if (procs[pe] === $Classes.DamageType.IMPACT) {
+            let internalBleedingChance = vigilanteChance
+                .Chance(internalBleedingChanceChance, 'InternalBleeding');
+
+            if (internalBleedingChance.Result.InternalBleeding) {
+                procs.push($Classes.DamageType.SLASH);
+            }
+        }
+    }*/
+
+    // Apply the procs from normal shot and residual
     enemyInstance.addProcs(procs);
 
     // Consume ammo

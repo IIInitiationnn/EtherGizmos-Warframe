@@ -260,6 +260,22 @@ class WeaponInstance {
     }
 
     /**
+     * Returns WeaponDamage object containing the damage of the base weapon without accounting for mods.
+     * @returns {WeaponDamage}
+     */
+    getBaseDamage() {
+        return this.getActiveFiringMode().getOriginalBaseDamage();
+    }
+
+    /**
+     * Returns WeaponDamage object containing the damage of the base weapon after accounting for damage mods only.
+     * @returns {WeaponDamage}
+     */
+    getModdedBaseDamage() {
+        return this.getBaseDamage().multiply(1 + this.getModdedStat(ModEffectType.DAMAGE));
+    }
+
+    /**
      * Returns WeaponDamage object containing the damage of the weapon after accounting for mods.
      * This includes physical (IPS), elemental (including combinations) and regular damage mods (not faction).
      * Continuous weapons affected by multishot instead have a chance to do additional damage in multiples of
@@ -267,7 +283,7 @@ class WeaponInstance {
      * @returns {WeaponDamage}
      */
     getDamage() {
-        let originalWeaponDamage = this.getActiveFiringMode().getOriginalBaseDamage();
+        let originalWeaponDamage = this.getBaseDamage();
         let totalBaseDamage = originalWeaponDamage.totalBaseDamage();
 
         let innateElementsDamage = originalWeaponDamage.innateElements();
@@ -321,28 +337,75 @@ class WeaponInstance {
         return this.getActiveFiringMode().pellets * (1 + this.getModdedStat(ModEffectType.MULTISHOT));
     }
 
+    /**
+     * Fetch the modded critical chance of the weapon on its current firing mode.
+     * Type 20.
+     * @returns {number}
+     */
     getCriticalChance() {
         return this.getActiveFiringMode().criticalChance * (1 + this.getModdedStat(ModEffectType.CRITICAL_CHANCE));
     }
 
+    /**
+     * Fetch the modded critical multiplier of the weapon on its current firing mode.
+     * Type 21.
+     * @returns {number}
+     */
     getCriticalMultiplier() {
         return this.getActiveFiringMode().criticalMultiplier * (1 + this.getModdedStat(ModEffectType.CRITICAL_DAMAGE));
     }
 
+    /**
+     * Fetch the modded status chance of the weapon on its current firing mode.
+     * Type 22 and 24.
+     * @returns {number}
+     */
     getStatusChance() {
         return this.getActiveFiringMode().statusChance * (1 + this.getModdedStat(ModEffectType.STATUS_CHANCE)) +
             this.getModdedStat(ModEffectType.STATUS_CHANCE_ADDITIVE);
     }
 
     /**
-     * Each status effect has its own duration.
+     * Fetch the modded status duration multiplier of the weapon on its current firing mode.
+     * Type 23.
      * @returns {number}
      */
     getStatusDurationMultiplier() {
         return 1 + this.getModdedStat(ModEffectType.STATUS_DURATION);
     }
 
-    // FIRE_RATE: 60,
+    /**
+     * Fetch the electric damage multiplier of the weapon on its current firing mode.
+     * Type 41.
+     * @returns {number}
+     */
+    getElectricMultiplier() {
+        return 1 + this.getModdedStat(ModEffectType.ELECTRIC);
+    }
+
+    /**
+     * Fetch the heat damage multiplier of the weapon on its current firing mode.
+     * Type 42.
+     * @returns {number}
+     */
+    getHeatMultiplier() {
+        return 1 + this.getModdedStat(ModEffectType.HEAT);
+    }
+
+    /**
+     * Fetch the toxin damage multiplier of the weapon on its current firing mode.
+     * Type 43.
+     * @returns {number}
+     */
+    getToxinMultiplier() {
+        return 1 + this.getModdedStat(ModEffectType.TOXIN);
+    }
+
+    /**
+     * Fetch the modded fire rate of the weapon on its current firing mode.
+     * Type 60.
+     * @returns {number}
+     */
     getFireRate() {
         return this.getActiveFiringMode().fireRate * (1 + this.getModdedStat(ModEffectType.FIRE_RATE));
     }
@@ -363,7 +426,8 @@ class WeaponInstance {
     }
 
     /**
-     * Modded shot delay.
+     * Fetch the modded shot delay of the weapon on its current firing mode.
+     * Type 60.
      * @returns {number} Delay in seconds between shots.
      */
     getShotDelay() {
@@ -372,7 +436,8 @@ class WeaponInstance {
     }
 
     /**
-     * Modded reload duration.
+     * Fetch the modded reload duration of the weapon on its current firing mode.
+     * Type 61.
      * @returns {number} Time to reload a full magazine.
      */
     getReloadDuration() {

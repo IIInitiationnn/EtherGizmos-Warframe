@@ -183,11 +183,14 @@ class EnemyInstance {
         /** @type {number} - Remaining shield of the enemy */
         this.currentShield = this.startingShield();
 
-        /** @type {Map<DamageType, Proc[]>} - Active procs on the enemy, organised into lists by type */
+        /** @type {Map<number, Proc[]>} - Active procs on the enemy, organised into lists by type. See DamageType */
         this.procs = new Map();
         for (let [dummy, damageType] of Object.entries(DamageType)) {
             this.procs.set(damageType, []);
         }
+
+        // TODO heat armor strip duration counters, heat damage total (don't record in each proc) <-- use latter in addProcs
+
 
         /** @type {number} - How long the enemy is shield gated for */
         this.shieldGatedDuration = 0;
@@ -330,7 +333,16 @@ class EnemyInstance {
      */
     addProcs(procs) {
         for (let proc of procs) {
-            this.procs.get(proc.getDamageType()).push(proc);
+            if (proc.getType() === DamageType.HEAT) {
+                let heatProcs = this.procs.get(proc.getType());
+                if (heatProcs.length === 0) {
+                    heatProcs.push(proc);
+                } else {
+                    heatProcs[0].augment(proc);
+                }
+            } else {
+                this.procs.get(proc.getType()).push(proc);
+            }
         }
         return this.capExtraProcs();
     }
@@ -397,13 +409,25 @@ class EnemyInstance {
         return this;
     }
 
-    /*TODO
-        slash (bleed)
-        heat (ignite) - status duration will affect how long it takes to reach full armor strip
-        electricity (tesla chain)
-        toxin (poison)
-        gas (gas cloud)
+    /**
+     * Remove all procs which have reached 0 remaining duration.
      */
+    removeExpiredProcs() {
+        for (let [damageType, procs] of this.procs.entries()) {
+            let activeProcs = [];
+            for (let proc of procs) {
+                if (proc.getRemainingDuration() > 0) {
+                    activeProcs.push(proc);
+                }
+            }
+            this.procs.set(damageType, activeProcs);
+        }
+    }
+
+    // TODO does not currently use ramp up and ramp down, is just a flat 50%
+    getHeatMultiplier() {
+        return this.procs.get(DamageType.HEAT).length === 0 ? 1 : 0.5;
+    }
 
     getCorrosiveMultiplier() {
         let numCorrosiveProcs = this.procs.get(DamageType.CORROSIVE).length;
@@ -433,10 +457,11 @@ class EnemyInstance {
 
         // TODO shield recharge, will need new field
 
-        /*for (let [damageType, procs] of this.procs.entries()) {
-            // TODO procs is a list, find min value of it
-            time = Math.min(time, proc.remainingDuration);
-        }*/
+        for (let [damageType, procs] of this.procs.entries()) {
+            for (let proc of procs) {
+                time = Math.min(time, proc.getNextEventTimeStep());
+            }
+        }
         return time;
     }
 
@@ -447,8 +472,11 @@ class EnemyInstance {
     advanceTimeStep(duration) {
         this.shieldGatedDuration -= Math.min(duration, this.shieldGatedDuration);
 
-        // TODO for all procs, advance their timer (and refresh their status if needed)
-        //  just call proc.advanceTimeStep() to handle it
+        for (let [damageType, procs] of this.procs.entries()) {
+            for (let proc of procs) {
+                proc.advanceTimeStep(duration);
+            }
+        }
     }
 
 }

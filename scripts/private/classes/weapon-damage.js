@@ -55,6 +55,11 @@ class WeaponDamage extends Map {
         this.set(damageType, this.get(damageType) + damageValue);
     }
 
+    /**
+     *
+     * @param multiplier
+     * @returns {WeaponDamage}
+     */
     multiply(multiplier) {
         let multiplied = this.clone();
         for (let [damageType, damageValue] of this.entries()) {
