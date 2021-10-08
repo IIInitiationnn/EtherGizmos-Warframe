@@ -1,3 +1,4 @@
+const {WeaponDamageDistribution} = require("./weapon-damage-distribution");
 const {DamageType, ModEffectType} = require('./magic-types');
 
 class Proc {
@@ -104,6 +105,10 @@ class Proc {
         return this.damageType;
     }
 
+    getDamage() {
+        return this.damage;
+    }
+
     /**
      * Fetch the remaining time on the status effect.
      * @returns {number}
@@ -177,6 +182,11 @@ class Proc {
     advanceTimeStep(duration) {
         this.elapsedDuration += duration;
         this.totalDuration += duration;
+    }
+
+    toWeaponDamageDistribution() {
+        return new WeaponDamageDistribution()
+            .set(this.getDamageType(), this.getDamage());
     }
 
 }

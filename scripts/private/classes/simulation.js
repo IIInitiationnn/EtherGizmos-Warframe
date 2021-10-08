@@ -1,8 +1,10 @@
+const {DamageType} = require('./magic-types');
 const {SimulationSettings} = require('./simulation-settings');
 const {EnemyInstance} = require('./enemy');
 const {WeaponInstance} = require('./weapon');
 const {Metrics} = require('./metrics');
 const {Proc} = require('./proc')
+const {SimulationUtils} = require('../utils/simulation-utils')
 const {DynamicPool} = require('node-worker-threads-pool');
 const dynamicPool = new DynamicPool(8);
 
@@ -34,8 +36,17 @@ class Simulation {
 
         // Loop for each enemy type
         for (let e = 0; e < this.enemyInstances.length; e++) {
-            allMetrics[e] = await new Promise((resolve) => {
-                let enemyInstance = this.enemyInstances[e].toObject();
+            let metricsForThisEnemy = [];
+            for (let i = 0; i < this.simulationSettings.numIterations; i++) {
+                metricsForThisEnemy.push(await executeSimulationNoMultithread(
+                    this.weaponInstance, EnemyInstance.deserialize(this.enemyInstances[e].serialize()), this.simulationSettings));
+            }
+
+
+            allMetrics[e] = metricsForThisEnemy;
+
+            /*allMetrics[e] = await new Promise((resolve) => {
+                let enemyInstance = this.enemyInstances[e].serialize();
                 let metricsForThisEnemy = []; // Metrics[]
                 let numIterationsCompleted = 0;
 
@@ -56,14 +67,14 @@ class Simulation {
                         }
                     })();
                 }
-            })
+            })*/
         }
         return allMetrics;
     }
 
 }
 
-async function executeSimulation(param) {
+/*async function executeSimulation(param) {
     // TODO if a shot was fired, reset the shot delay to its default and charge delay to its default
     //  if need to reload, execute reload then reset the shot delay to 0 and charge delay to its default
 
@@ -77,8 +88,91 @@ async function executeSimulation(param) {
     const maxSimulationDuration = 999999;
 
     let weaponInstance = WeaponInstance.fromObject(param.weaponInstance);
-    let enemyInstance = EnemyInstance.fromObject(param.enemyInstance);
+    let enemyInstance = EnemyInstance.deserialize(param.enemyInstance);
     let simulationSettings = SimulationSettings.fromObject(param.simulationSettings);
+
+    let metrics = new Metrics();
+    let timeElapsed = 0;
+    //console.log('initial enemy status:', enemyInstance);
+
+    while (enemyInstance.isAlive() && timeElapsed < maxSimulationDuration) {
+        let timeUntilNextWeaponEvent = weaponInstance.getNextEventTimeStep();
+        let timeUntilNextEnemyEvent = enemyInstance.getNextEventTimeStep();
+        let timeUntilNextEvent = Math.min(timeUntilNextWeaponEvent, timeUntilNextEnemyEvent);
+
+        //console.log('time elapsed:', timeElapsed, '\n');
+        timeElapsed += timeUntilNextEvent;
+        weaponInstance.advanceTimeStep(timeUntilNextEvent);
+        enemyInstance.advanceTimeStep(timeUntilNextEvent);
+
+        // TODO Handle weapon buffs.
+        /!*for (let buff of weaponInstance.buffs) {
+        }*!/
+        // TODO work out if its 1hit 2proc 3hit 4proc or 1hit 2residual 3hitproc 4residualproc
+        //  if the latter (which i suspect) we will need to simply keep a record of the procs and add them after
+        //  so itd be like 1hit (save procs), 2hitresiduals (save procs), 3 add the procs, 4 add the procs, 5 calculate damage of procs
+        //  did some testing and it could be the former but would need to use numbers to be certain
+        // Shoot the enemy, or wait until you can. - inherently handles adding procs
+        if (weaponInstance.canShoot()) {
+            await shoot(weaponInstance, enemyInstance, metrics, simulationSettings);
+
+            /!*!//Keep track of metrics from the shot
+            let hitCount = 0;
+            let critCount = {};
+            let headCount = 0;
+            let headCritCount = 0;
+            let procs = [];
+
+            //Loop through each pellet
+            for (let s = 0; s < shotRng.length; s++) {
+                let shot = shotRng[s];
+                if (shot.Hit) hitCount++;
+                if (shot.Critical !== undefined) critCount[shot.Critical] = (critCount[shot.Critical] || 0) + 1;
+                if (shot.Headshot) headCount++;
+                if (shot.Critical && shot.Headshot) headCritCount++;
+                if (shot.Procs !== undefined && shot.Procs.length > 0) {
+                    procs = procs.concat(shot.Procs);
+                }
+                if (shot.Residuals !== undefined && shot.Residuals.length > 0) {
+                    for (let r = 0; r < shot.Residuals.length; r++)
+                    {
+                        procs = procs.concat(shot.Residuals[r].Procs);
+                    }
+                }
+            }*!/
+
+
+        }
+
+        // TODO each possible event that can occur should be processed e.g. a proc does damage
+
+
+        // TODO Handle effects of residuals e.g. Shedu electricity explosion damage - also handles procs
+
+
+        // TODO deal damage from procs, similar to the process of dealing damage in shoot()
+        enemyInstance.removeExpiredProcs();
+
+        // TODO Calculate residual procs ??? can be merged with above or not? no idea what this involves
+
+        //console.log('enemy health:', enemyInstance.getCurrentHealth());
+
+    }
+    //console.log('final kill time:', timeElapsed);
+    //console.log(enemyInstance.procs);
+    metrics.setKillTime(timeElapsed);
+    return metrics;
+}*/
+
+async function executeSimulationNoMultithread(weaponInstance, enemyInstance, simulationSettings) {
+    // TODO if a shot was fired, reset the shot delay to its default and charge delay to its default
+    //  if need to reload, execute reload then reset the shot delay to 0 and charge delay to its default
+
+    // are these paths relative to the script that is run??
+    const {Metrics} = require('../classes/metrics');
+    const {shoot} = require('../classes/simulation');
+
+    const maxSimulationDuration = 999999;
 
     let metrics = new Metrics();
     let timeElapsed = 0;
@@ -134,7 +228,7 @@ async function executeSimulation(param) {
         }
 
         // TODO each possible event that can occur should be processed e.g. a proc does damage
-
+        enemyInstance.dealProcDamage();
 
         // TODO Handle effects of residuals e.g. Shedu electricity explosion damage - also handles procs
 
@@ -153,14 +247,7 @@ async function executeSimulation(param) {
     return metrics;
 }
 
-/**
- *
- * @param {number} chance - Chance of event occurring.
- * @returns {boolean} - Whether or not the event occurred.
- */
-function happens(chance) {
-    return chance >= 1 || (chance > 0 && Math.random() < chance);
-}
+
 
 /**
  * Fire one shot (many contain many pellets) at the enemy.
@@ -170,27 +257,10 @@ function happens(chance) {
  * @param {SimulationSettings} simulationSettings
  */
 async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings) {
-    const {Proc} = require('./proc');
-    // Multishot
-    let numPellets = weaponInstance.getPellets();
-
-    let isExtraPellet = happens(numPellets - Math.floor((numPellets)));
-    if (isExtraPellet) numPellets++;
-    numPellets = Math.floor(numPellets);
-
-    // Critical chance
-    let overallCritChance = weaponInstance.getCriticalChance();
-    let critTier = Math.floor(overallCritChance);
-    let critChance = overallCritChance - critTier;
-
-    // Status chance
-    let overallStatChance = weaponInstance.getStatusChance();
-    let statTier = Math.floor(overallStatChance);
-    let statChance = overallStatChance - statTier;
     let procs = [];
 
     // Ammo consumption NVM ammo consumption is not chance based
-    //let ammoConsumed = happens(weaponInstance.getAmmoConsumption());
+    //let ammoConsumed = SimulationUtils.happens(weaponInstance.getAmmoConsumption());
 
     // Fire rate
     let fireRate = weaponInstance.getFireRate();
@@ -199,140 +269,32 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
     // TODO cannot produce multiple procs in a single instance of damage alongside any other slash sources
     let internalBleedingChance = weaponInstance.getInternalBleedingEffect();
 
-    let damage = weaponInstance.getDamage(); // will not change for each pellet
-
-    /*let healthType = await enemyInstance.enemy.getHealthType();
-    let armorType = await enemyInstance.enemy.getArmorType();
-    let shieldType = await enemyInstance.enemy.getShieldType();*/
-
-    let healthType = enemyInstance.enemy.healthType;
-    let armorType = enemyInstance.enemy.armorType;
-    let shieldType = enemyInstance.enemy.shieldType;
-
-    // Damage modifier for type-specific health and armor resistances
-    // TODO note: does not consider total armor strip (in which case afterArmorTypeResistances should not be applied)
-    let damageToHealth = damage.afterHealthResistances(healthType)
-        .afterArmorTypeResistances(armorType)
-
-    // Damage modifier for type-specific shield resistances
-    let damageToShield = damage.afterShieldResistances(shieldType);
-
-    // TODO toxin ignores shields
-
-    let magneticMultiplier = enemyInstance.getMagneticMultiplier();
-    let viralMultiplier = enemyInstance.getViralMultiplier();
-
-
-    for (let i = 0; i < numPellets; i++) {
+    let damageInstances = SimulationUtils.shotDamageInstances(simulationSettings, weaponInstance,
+        enemyInstance, weaponInstance.getDamage());
+    for (let damageInstance of damageInstances) {
         if (!enemyInstance.isAlive()) break;
 
-        // Accuracy of pellet: if it misses, go next
-        if (!happens(simulationSettings.accuracy)) continue;
+        enemyInstance.dealDamage(damageInstance);
 
-        // Critical hit
-        let isExtraCritical = happens(critChance);
-
-        // Headshot
-        let isHeadshot = happens(simulationSettings.headshot);
-
-        // Actual crit of the pellet
-        let critTierPellet = critTier;
-        if (isExtraCritical) critTierPellet++;
-
-        // Either it was a guaranteed critical hit without extra chance calculation (e.g. 100% CC, 200% etc.)
-        // or it was a sub-100% critical hit which happened (e.g. 90% CC)
-        // If it was not a critical hit at all, critOccurred will be false
-        let critOccurred = critTier !== 0;
-
-        // TODO Critical headshots (dependent on enemy, refer to wiki) also kind of confusing
-        let criticalHeadshotMultiplier = critOccurred && isHeadshot ? 2 : 1;
-
-        // Vigilante set critical chance
-        // Crit needs to occur, then Vigilante set chance
-        let isVigilanteEnhanced = critOccurred && happens(weaponInstance.getVigilanteSetEffect());
-
-        // TODO any other factors affecting stats, like buffs from augments (may need to be passed in as parameter)
-        if (isVigilanteEnhanced) critTierPellet++;
-
-        // TODO Deal direct damage
-        //  when calculating for beams:
-        //  On continuous weapons, however, Multishot bonus does not generate additional instances of damage.
-        //  Additional "projectiles" instead merge into the original beam's damage ticks allowing each regular tick
-        //  interval (based on the weapon's fire rate) a chance to roll bonus damage in multiples of itself,
-        //  similar to how Critical Hits function. Even though the number of damage ticks overall does not increase,
-        //  additional multishot still increases the Status Chance of each individual tick.
-        //  Due to Multishot increasing both per-tick damage and status chance, status damage
-        //  is affected twice by multishot on all continuous weapons.
-        //  so each tick rolls status chance and crit chance, which can be increased by multishot.
-
-        // Percentage of remaining damage to be dealt
-        let remainingDamage = 1;
-
-        // Damage multipliers
-        let critMultiplier = 1 + (critTierPellet * (weaponInstance.getCriticalMultiplier() - 1));
-        let headMultiplier = isHeadshot ? weaponInstance.getHeadshotMultiplier(enemyInstance.enemy.headshotMultiplier) : 1;
-        let factionMultiplier = weaponInstance.getFactionMultiplier();
-
-        let damageMultiplier = critMultiplier * headMultiplier * criticalHeadshotMultiplier * factionMultiplier;
-        // any other multipliers go here...
-        //console.log('moddedDamageBeforeMultipliers:', damage)
-        //console.log('afterCritsHeadshotsFactionEtc:', multipliedDamage)
-
-        // Total damage to be done to shields, if there are any shields
-        if (enemyInstance.hasShields()) {
-            let amtDmgToShields = damageToShield.multiply(magneticMultiplier * damageMultiplier).totalBaseDamage();
-
-            // Deal the damage to the shields
-            let dealtDamage = enemyInstance.damageShield(amtDmgToShields);
-
-            // Calculate how much more damage needs to be done to health
-            let proportionOfDamageDealt = dealtDamage / amtDmgToShields;
-            remainingDamage -= proportionOfDamageDealt;
-
-            // All shields gone from this hit
-            if (!enemyInstance.hasShields()) {
-                enemyInstance.shieldGatedDuration = 0.1;
-            }
-        }
-
-        // Total damage to be done to health
-        if (remainingDamage > 0) {
-            // See https://warframe.fandom.com/wiki/Damage#Damage_Calculation and
-            // https://warframe.fandom.com/wiki/Armor for more detailed explanations.
-            // If x% of the damage was dealt to the shields, (100-x)% of the damage will be dealt to health.
-            let shieldGatingMultiplier = enemyInstance.isShieldGated() && !isHeadshot ? 0.05 : 1;
-            //console.log('shield gating:', shieldGatingMultiplier);
-            let multipliers = viralMultiplier * damageMultiplier * shieldGatingMultiplier * remainingDamage;
-            let healthDamage = damageToHealth.multiply(multipliers)
-                // General armor damage reduction = Net Armor / (Net Armor + 300)
-                // so multiplier = 1 - reduction = 300 / (Net Armor + 300)
-                .afterNetArmorResistances(armorType, enemyInstance.getArmor());
-
-            //console.log('healthDamage after all calculations:', healthDamage)
-            let amtDmgToHealth = healthDamage.totalBaseDamage();
-
-            // Deal the damage to health
-            enemyInstance.damageHealth(amtDmgToHealth);
-        }
-
-        // Statuses
-        //  TODO now sure how headmultipliers work into this
-        let statusDamage = weaponInstance.getModdedBaseDamage().totalBaseDamage() * factionMultiplier * factionMultiplier * critMultiplier * headMultiplier;
-        for (let statusType of damage.randomStatus(statTier + happens(statChance) ? 1 : 0)) {
-            procs.push(new Proc(statusType, statusDamage, weaponInstance));
-        }
+        // Status
+        let statTier = SimulationUtils.getStatusTier(weaponInstance.getStatusChance());
+        procs.push(...SimulationUtils.getProcs(statTier, weaponInstance, weaponInstance.getDamage()));
     }
 
-    // TODO residuals
+    let residualInstances; // TODO
 
-    /*
     // Below is the additional procs, after all damage instances considered
 
     // Hunter Munitions
     // TODO Cannot produce multiple procs in a single instance of damage alongside forced Slash from sources
+    if (SimulationUtils.randomChance(weaponInstance.getHunterMunitionsEffect())) { // TODO also needs crit
+        procs.push(new Proc(DamageType.SLASH, weaponInstance.getDamage(), weaponInstance));
+    }
+
+    /*
     //  such as Internal Bleeding or the debuff from Seeking Talons, but can stack with
     //  Slash statuses applied using a weapon's innate status chance.
-    let isHunterMunitions = critOccurred && happens(weaponInstance.getHunterMunitionsEffect());
+    let isHunterMunitions = critOccurred && SimulationUtils.happens(weaponInstance.getHunterMunitionsEffect());
 
     // TODO first calculate regular slash from status, then hunter, then if nothing happens from either, try internal bleeding
     //  may need to calculate after the pellet loop
@@ -373,8 +335,9 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
         //this.CurrentChargeDelay = this.ChargeDelay;
     }
 
-    metrics.addPelletsFired(numPellets);
+    //metrics.addPelletsFired(numPellets);
     metrics.addShotsFired(1);
+    metrics.addProcs(procs);
 
     //console.log('remaining magazine:', weaponInstance.remainingMagazine);
 
@@ -499,6 +462,8 @@ async function shoot(weaponInstance, enemyInstance, metrics, simulationSettings)
             this.Weapon.RemoveBuff($Classes.BuffNames.LATRON_NEXT_SHOT_BONUS);
         }*/
 }
+
+
 
 module.exports = {
     Simulation,

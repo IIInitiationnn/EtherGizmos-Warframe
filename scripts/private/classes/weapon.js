@@ -1,7 +1,8 @@
+const {DamageType} = require('./magic-types');
 const {WeaponFiringMode} = require('./weapon-firing-mode');
 const {Mod, ModInstance} = require('./mod');
 const {ModEffectType, isPrimaryElement, elementalModEffectToDamage, elementalModEffectTypes} = require('./magic-types');
-const {WeaponDamage} = require('./weapon-damage');
+const {WeaponDamageDistribution} = require('./weapon-damage-distribution');
 const {replacer, reviver} = require('./map-util');
 
 class Weapon {
@@ -261,15 +262,15 @@ class WeaponInstance {
 
     /**
      * Returns WeaponDamage object containing the damage of the base weapon without accounting for mods.
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     getBaseDamage() {
-        return this.getActiveFiringMode().getOriginalBaseDamage();
+        return this.getActiveFiringMode().getBaseDamageDistribution();
     }
 
     /**
      * Returns WeaponDamage object containing the damage of the base weapon after accounting for damage mods only.
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     getModdedBaseDamage() {
         return this.getBaseDamage().multiply(1 + this.getModdedStat(ModEffectType.DAMAGE));
@@ -280,7 +281,7 @@ class WeaponInstance {
      * This includes physical (IPS), elemental (including combinations) and regular damage mods (not faction).
      * Continuous weapons affected by multishot instead have a chance to do additional damage in multiples of
      * itself every tick (according to fire rate), as well as additional critical hits and status procs.
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     getDamage() {
         let originalWeaponDamage = this.getBaseDamage();
@@ -316,7 +317,14 @@ class WeaponInstance {
 
         // TODO kuva / tenet bonus
 
-        let moddedWeaponDamage = new WeaponDamage();
+        let moddedWeaponDamage = new WeaponDamageDistribution();
+
+        // IPS TODO integrate with IPS mods
+        moddedWeaponDamage.add(DamageType.IMPACT, originalWeaponDamage.get(DamageType.IMPACT));
+        moddedWeaponDamage.add(DamageType.PUNCTURE, originalWeaponDamage.get(DamageType.PUNCTURE));
+        moddedWeaponDamage.add(DamageType.SLASH, originalWeaponDamage.get(DamageType.SLASH));
+
+        // Elements
         for (let elementGroup of elementGroups) {
             moddedWeaponDamage.add(Math.max(...elementGroup.get("elements")), elementGroup.get("damage"));
         }
@@ -333,7 +341,7 @@ class WeaponInstance {
      *  instead of just + modded stat, have to add the buff stat too, then ensure > -1 --- use (Math.max(0, h) probably
      * @returns {number}
      */
-    getPellets() {
+    getMultishot() {
         return this.getActiveFiringMode().pellets * (1 + this.getModdedStat(ModEffectType.MULTISHOT));
     }
 
@@ -604,8 +612,8 @@ class WeaponInstance {
         });
     }
 
-    getHeadshotMultiplier(enemyHeadshotMultiplier) {
-        return enemyHeadshotMultiplier * (1 + this.getModdedStat(ModEffectType.HEADSHOT_DAMAGE));
+    getHeadshotMultiplier() {
+        return 1 + this.getModdedStat(ModEffectType.HEADSHOT_DAMAGE);
     }
 
     // FIRST_SHOT_DAMAGE: 101,

@@ -31,7 +31,7 @@ function sortMods(a, b) {
  */
 async function queueSimulationMaximizer(weapon, additionalSettingsVariables, firingMode) {
     let enemy = await Enemy.fromID('corrupted-heavy-gunner');
-    let enemyInstance = new EnemyInstance(enemy, enemyLevel)
+    let enemyInstance = new EnemyInstance(enemy, enemyLevel);
 
     let validModsList = await Mod.getValidModsFor(weapon, true);
     let unwanted = ['primed-bane-of-infested',
@@ -58,7 +58,7 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables, fir
         let results = mean(await queueSimulation(weaponModded, enemies));
         console.log(build, results);
     }*/
-    let testMods = ['primed-bane-of-corrupted', 'split-chamber', 'vital-sense', 'serration', 'hunter-munitions', 'point-strike', 'primed-cryo-rounds', 'malignant-force']
+    let testMods = ['primed-bane-of-corrupted', 'split-chamber', 'vital-sense', 'serration', 'point-strike', 'hunter-munitions', 'primed-cryo-rounds', 'malignant-force']
     let actualMods = [];
     for (let modId of testMods) {
         actualMods.push(await ModInstance.fromModID(modId));
@@ -73,12 +73,21 @@ async function queueSimulationMaximizer(weapon, additionalSettingsVariables, fir
     let metrics = (await simulation.run())[0]; // returns Metrics[][], we seek Metrics[] which contains one Metrics for each iteration of the enemy type
     let currentResults = Metrics.meanKillTime(metrics);
 
-    let x = []
+    let killTimes = []
     for (let metric of metrics) {
-        x.push(metric.killTime);
+        killTimes.push(metric.killTime);
     }
-    console.log(x.toString());
+    console.log(killTimes.toString());
     console.log(currentResults);
+
+    let totalProcs = new Map();
+    for (let metric of metrics) {
+        for (let proc of metric.procs) {
+            totalProcs.set(proc.getType(), totalProcs.get(proc.getType()) + 1 || 0)
+        }
+    }
+
+    console.log(totalProcs);
     return;
 
     let allTimeBestBuilds = new Map(); // build (Mod[]): kill-time (number)
@@ -317,7 +326,7 @@ function isSameArray(array1, array2) {
 
 // Driver code
 (async () => {
-    let weapon = await Weapon.fromID('ignis-wraith');
+    let weapon = await Weapon.fromID('karak');
     await new Promise(r => setTimeout(r, 2000));
     queueSimulationMaximizer(weapon, {}, 0)
         .then(async () => {

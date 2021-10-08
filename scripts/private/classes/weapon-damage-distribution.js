@@ -1,7 +1,7 @@
 const {isElement, DamageType} = require('./magic-types');
 const {replacer, reviver} = require('./map-util');
 
-class WeaponDamage extends Map {
+class WeaponDamageDistribution extends Map {
     constructor() {
         super();
         this.set(DamageType.IMPACT, 0);
@@ -23,10 +23,18 @@ class WeaponDamage extends Map {
 
     /**
      *
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     clone() {
-        return Object.setPrototypeOf(JSON.parse(JSON.stringify(this, replacer), reviver), WeaponDamage.prototype);
+        return Object.setPrototypeOf(JSON.parse(JSON.stringify(this, replacer), reviver), WeaponDamageDistribution.prototype);
+    }
+
+    getToxin() {
+        return this.get(DamageType.TOXIN);
+    }
+
+    isZero() {
+        return this.totalBaseDamage() === 0;
     }
 
     totalBaseDamage() {
@@ -58,7 +66,7 @@ class WeaponDamage extends Map {
     /**
      *
      * @param multiplier
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     multiply(multiplier) {
         let multiplied = this.clone();
@@ -91,7 +99,7 @@ class WeaponDamage extends Map {
     /**
      *
      * @param {ResistanceType} healthType
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     afterHealthResistances(healthType) {
         let damageAfterResistances = this.clone();
@@ -105,7 +113,7 @@ class WeaponDamage extends Map {
     /**
      *
      * @param {ResistanceType} armorType
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     afterArmorTypeResistances(armorType) {
         let damageAfterResistances = this.clone();
@@ -117,18 +125,17 @@ class WeaponDamage extends Map {
         return damageAfterResistances;
     }
 
-    // TODO note: does not consider complete armor strip
     /**
      *
      * @param {ResistanceType} armorType
      * @param {number} enemyArmor
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     afterNetArmorResistances(armorType, enemyArmor) {
         // General armor damage reduction = Net Armor / (Net Armor + 300)
         // so multiplier = 1 - reduction = 300 / (Net Armor + 300)
         let damageAfterResistances = this.clone();
-        if (armorType == null) return damageAfterResistances;
+        if (armorType == null || enemyArmor === 0) return damageAfterResistances;
         for (let [damageType, damageValue] of damageAfterResistances.entries()) {
             let netArmor = enemyArmor * (1 - armorType.resistances.get(damageType)); // AR * (1 - AM)
             let multiplier = 300 / (300 + netArmor);
@@ -141,7 +148,7 @@ class WeaponDamage extends Map {
     /**
      *
      * @param {ResistanceType} shieldType
-     * @returns {WeaponDamage}
+     * @returns {WeaponDamageDistribution}
      */
     afterShieldResistances(shieldType) {
         let damageAfterResistances = this.clone();
@@ -150,6 +157,17 @@ class WeaponDamage extends Map {
             damageAfterResistances.set(damageType, damageValue * (1 + shieldType.resistances.get(damageType)));
         }
         return damageAfterResistances;
+    }
+
+    afterAllHealthResistances(healthType, armorType, enemyArmor) {
+        let damageAfterResistances = this.afterHealthResistances(healthType);
+        if (enemyArmor !== 0) {
+            return damageAfterResistances
+                .afterArmorTypeResistances(armorType)
+                .afterNetArmorResistances(armorType, enemyArmor);
+        } else {
+            return damageAfterResistances;
+        }
     }
 
     setImpact(impact) {
@@ -230,5 +248,5 @@ class WeaponDamage extends Map {
 }
 
 module.exports = {
-    WeaponDamage
+    WeaponDamageDistribution
 }

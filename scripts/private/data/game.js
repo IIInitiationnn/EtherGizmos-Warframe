@@ -7,7 +7,7 @@ const {Mod} = require('../classes/mod');
 const {Enemy} = require('../classes/enemy');
 const {ResistanceType} = require('../classes/resistance-type');
 const {WeaponFiringMode} = require('../classes/weapon-firing-mode');
-const {WeaponDamage} = require('../classes/weapon-damage');
+const {WeaponDamageDistribution} = require('../classes/weapon-damage-distribution');
 
 let lastUpdated = new Date(0);
 let isUpdating = false;
@@ -115,7 +115,7 @@ function updateWeapons() {
                                 }
 
                                 // Base damage
-                                let baseDamage = new WeaponDamage()
+                                let baseDamage = new WeaponDamageDistribution()
                                     .setImpact(firingModeResult.impact)
                                     .setPuncture(firingModeResult.puncture)
                                     .setSlash(firingModeResult.slash)
@@ -140,7 +140,7 @@ function updateWeapons() {
                                     .setStatusChance(firingModeResult.status_chance)
                                     .setIsBeam(!!firingModeResult.is_beam.readUIntBE(0, 1))
                                     .setChargeDelay(firingModeResult.charge_delay)
-                                    .setOriginalBaseDamage(baseDamage);
+                                    .setBaseDamageDistribution(baseDamage);
                             }
                             callback(null, 1);
                         }
@@ -170,7 +170,7 @@ function updateWeapons() {
                                 let firingMode = weapon.firingModes[residualResult.line - 1]; // WeaponFiringMode type
 
                                 // Residual base damage
-                                let baseDamage = new WeaponDamage();
+                                let baseDamage = new WeaponDamageDistribution();
                                 baseDamage
                                     .setImpact(residualResult.impact)
                                     .setPuncture(residualResult.puncture)
@@ -187,7 +187,7 @@ function updateWeapons() {
                                     .setViral(residualResult.viral);
 
                                 let firingModeResidual = new WeaponResiduals()
-                                    .setOriginalBaseDamage(baseDamage)
+                                    .setBaseDamageDistribution(baseDamage)
                                     .setDuration(residualResult.duration)
                                     .setPellets(residualResult.pellets)
                                     .setInheritsCriticalChance(residualResult.inherit_critical_chance)

@@ -7,6 +7,12 @@ class Metrics {
         this.headshots = 0;
         this.headCrits = 0;
         this.reloads = 0;
+        this.procs = []; // TODO remove, just temp
+    }
+
+    // TODO remove, just temp
+    addProcs(procs) {
+        this.procs.push(...procs);
     }
 
     getKillTime() {

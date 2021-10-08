@@ -1,10 +1,10 @@
-const {WeaponDamage} = require('./weapon-damage');
+const {WeaponDamageDistribution} = require('./weapon-damage-distribution');
 
 class ResistanceType {
     constructor() {
         this.id = undefined;
         this.name = undefined;
-        this.resistances = new WeaponDamage();
+        this.resistances = new WeaponDamageDistribution();
     }
 
     /**

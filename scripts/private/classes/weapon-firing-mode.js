@@ -1,5 +1,5 @@
 const {WeaponResiduals} = require('./weapon-residuals');
-const {WeaponDamage} = require('./weapon-damage');
+const {WeaponDamageDistribution} = require('./weapon-damage-distribution');
 const {replacer, reviver} = require('./map-util');
 
 /**
@@ -18,7 +18,7 @@ class WeaponFiringMode {
         this.isBeam = undefined;
         this.chargeDelay = undefined;
 
-        this.originalBaseDamage = new WeaponDamage();
+        this.baseDamageDistribution = new WeaponDamageDistribution();
         this.residuals = new WeaponResiduals();
     }
     /**
@@ -29,7 +29,7 @@ class WeaponFiringMode {
     static fromObject(object) {
         let plainObject = JSON.parse(object, reviver);
 
-        Object.setPrototypeOf(plainObject.originalBaseDamage, WeaponDamage.prototype);
+        Object.setPrototypeOf(plainObject.baseDamageDistribution, WeaponDamageDistribution.prototype);
         plainObject.residuals = WeaponResiduals.fromObject(JSON.stringify(plainObject.residuals, replacer));
 
         return Object.setPrototypeOf(plainObject, WeaponFiringMode.prototype);
@@ -80,12 +80,12 @@ class WeaponFiringMode {
         return this;
     }
 
-    getOriginalBaseDamage() {
-        return this.originalBaseDamage;
+    getBaseDamageDistribution() {
+        return this.baseDamageDistribution;
     }
 
-    setOriginalBaseDamage(originalBaseDamage) {
-        this.originalBaseDamage = originalBaseDamage;
+    setBaseDamageDistribution(baseDamageDistribution) {
+        this.baseDamageDistribution = baseDamageDistribution;
         return this;
     }
 

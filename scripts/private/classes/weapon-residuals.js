@@ -1,9 +1,9 @@
-const {WeaponDamage} = require("./weapon-damage");
+const {WeaponDamageDistribution} = require("./weapon-damage-distribution");
 const {reviver} = require('./map-util');
 
 class WeaponResiduals {
     constructor() {
-        this.originalBaseDamage = new WeaponDamage();
+        this.baseDamageDistribution = new WeaponDamageDistribution();
         this.duration = undefined;
         this.pellets = undefined;
         this.inheritsCriticalChance = undefined; // boolean
@@ -18,12 +18,12 @@ class WeaponResiduals {
      */
     static fromObject(object) {
         let plainObject = JSON.parse(object, reviver);
-        Object.setPrototypeOf(plainObject.originalBaseDamage, WeaponDamage.prototype)
+        Object.setPrototypeOf(plainObject.baseDamageDistribution, WeaponDamageDistribution.prototype)
         return Object.setPrototypeOf(plainObject, WeaponResiduals.prototype)
     }
 
-    setOriginalBaseDamage(originalBaseDamage) {
-        this.originalBaseDamage = originalBaseDamage;
+    setBaseDamageDistribution(originalBaseDamage) {
+        this.baseDamageDistribution = originalBaseDamage;
         return this;
     }
 
