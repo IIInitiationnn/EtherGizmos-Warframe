@@ -63,7 +63,7 @@ class Maximizer {
         for (let k = 0; k < maxIterations; k++) {
             let targetNumIterations = Math.floor(k / 25) + 2;
 
-            let newWeapon = await getRandomNeighbor(validMods, currentWeapon, results, targetNumIterations);
+            let newWeapon = await currentWeapon.getRandomNeighbor(validMods, results, targetNumIterations);
             let iterationsNeeded = results.iterationsNeeded(newWeapon,  targetNumIterations);
 
             simulationSettings.setNumIterations(iterationsNeeded);
