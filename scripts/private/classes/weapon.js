@@ -1,9 +1,10 @@
-const {DamageType} = require('./magic-types');
-const {WeaponFiringMode} = require('./weapon-firing-mode');
-const {Mod, ModInstance} = require('./mod');
-const {ModEffectType, isPrimaryElement, elementalModEffectToDamage, elementalModEffectTypes} = require('./magic-types');
-const {WeaponDamageDistribution} = require('./weapon-damage-distribution');
-const {replacer, reviver} = require('./map-util');
+const {BuildUtils} = require('../utils/buildUtils');
+const {DAMAGE_TYPE} = require('../utils/magicTypes');
+const {WeaponFiringMode} = require('./weaponFiringMode');
+const {ModInstance} = require('./mod');
+const {MOD_EFFECT_TYPE, isPrimaryElement, elementalModEffectToDamage, elementalModEffectTypes} = require('../utils/magicTypes');
+const {WeaponDamageDistribution} = require('./weaponDamageDistribution');
+const {replacer, reviver} = require('../utils/mapUtils');
 
 class Weapon {
     constructor() {
@@ -36,18 +37,6 @@ class Weapon {
         }
 
         return Object.setPrototypeOf(plainObject, Weapon.prototype)
-    }
-
-    /**
-     * Returns a Weapon from its ID.
-     * @param id
-     * @returns {Promise<Weapon>}
-     */
-    static async fromID(id) {
-        if (id == null) return null;
-        const {getWeapons} = require('../data/game');
-        let weaponData = await getWeapons();
-        return weaponData[id];
     }
 
     setID(id) {
@@ -134,7 +123,7 @@ class WeaponInstance {
         this.currentChargeDelay = this.getActiveFiringMode().chargeDelay;
 
         /** @type {number} - Number of shots remaining in the magazine */
-        this.remainingMagazine = this.weapon.baseMagazineSize;
+        this.remainingMagazine = this.getWeapon().baseMagazineSize;
 
         /** @type {number} - Amount of time in seconds before the weapon is reloaded */
         this.remainingReloadDuration = 0;
@@ -154,14 +143,14 @@ class WeaponInstance {
     logMods() {
         let names = [];
         for (let modInstance of this.modInstances) names.push(modInstance.mod.name)
-        console.log('Mods for ' + this.weapon.name + ':', names)
+        console.log('Mods for ' + this.getWeapon().name + ':', names)
     }
 
     /**
      * Convert WeaponInstance object into JSON string.
      * @returns {string}
      */
-    toObject() {
+    serialize() {
         return JSON.stringify(this, replacer);
     }
 
@@ -170,7 +159,7 @@ class WeaponInstance {
      * @param {string} object
      * @returns {WeaponInstance}
      */
-    static fromObject(object) {
+    static deserialize(object) {
         let plainObject = JSON.parse(object, reviver);
 
         plainObject.weapon = Weapon.fromObject(JSON.stringify(plainObject.weapon, replacer))
@@ -179,6 +168,89 @@ class WeaponInstance {
         }
 
         return Object.setPrototypeOf(plainObject, WeaponInstance.prototype)
+    }
+
+    clone() {
+        return WeaponInstance.deserialize(this.serialize());
+    }
+
+    /**
+     * @returns {Weapon}
+     */
+    getWeapon() {
+        return this.weapon;
+    }
+
+    /**
+     * @returns {ModInstance[]}
+     */
+    getMods() {
+        return this.modInstances;
+    }
+
+    /**
+     * @returns {string} - String describing the mods
+     */
+    getBuild() {
+        return BuildUtils.toBuildString(this.modInstances);
+    }
+
+    /**
+     *
+     * @param {Mod[]} validMods
+     * @returns {ModInstance[]} - List of the random mods.
+     */
+    getRandomMods(validMods) {
+        // TODO in future, use Data.getValidModsFor(this.weapon);
+        let randomMods = [];
+        for (let i = 0; i < 8; i++) {
+            let newMod = new ModInstance(validMods[Math.floor(Math.random() * validMods.length)]);
+            while (!newMod.isCompatible(randomMods)) {
+                newMod = new ModInstance(validMods[Math.floor(Math.random() * validMods.length)]);
+            }
+            randomMods.push(newMod);
+        }
+        return randomMods;
+    }
+
+    /**
+     *
+     * @param {Array} validMods
+     * @param {Results} results
+     * @param {number} targetNumIterations
+     * @returns {WeaponInstance} Weapon with new mod
+     */
+    async getRandomNeighbor(validMods, results, targetNumIterations) {
+        let currentMods = [...this.getMods()];
+        let newMods = [...currentMods];
+        let position = Math.floor(Math.random() * currentMods.length);
+        currentMods.splice(position, 1);
+
+        let weapon = this.getWeapon();
+        let validUntestedMods = [...validMods];
+
+        // Remove existing mod, find new compatible mod
+        let newMod = new ModInstance(validUntestedMods.splice(Math.floor(Math.random() * validUntestedMods.length), 1)[0]);
+        newMods.splice(position, 1, newMod);
+        let newWeaponInstance = new WeaponInstance(weapon, newMods, this.firingModeId);
+
+        while (!newMod.isCompatible(currentMods) || BuildUtils.equals(this, newWeaponInstance) ||
+            results.iterationsNeeded(newWeaponInstance, targetNumIterations) === 0) {
+            newMod = new ModInstance(validUntestedMods.splice(Math.floor(Math.random() * validUntestedMods.length), 1)[0]);
+            newMods.splice(position, 1, newMod);
+            newWeaponInstance = new WeaponInstance(weapon, newMods, this.firingModeId);
+
+            if (validUntestedMods.length === 0) {
+                // TODO: no valid neighbour
+                console.log("no valid neighbour");
+            }
+        }
+
+        // TODO potentially run a round with a build even if iterationsNeeded == 0
+        //  since maybe you want to just want to explore the space more
+        //  at the moment this is disabled for efficiency; analyse success of maximizer
+
+        return newWeaponInstance;
     }
 
     // whatever functions are needed during simulation
@@ -198,7 +270,7 @@ class WeaponInstance {
      * @returns {WeaponFiringMode}
      */
     getActiveFiringMode() {
-        return this.weapon.firingModes[this.firingModeId];
+        return this.getWeapon().firingModes[this.firingModeId];
     }
 
     // Relative to base stats i.e. +0.15 indicates 15% buff (1.15), -0.2 represents 20% debuff (0.8).
@@ -213,7 +285,7 @@ class WeaponInstance {
      * Given a list of the existing combined elements and some unconsidered elements,
      * merge or add these new elements appropriately.
      * @param {Map[]} elementGroups
-     * @param {Map<DamageType, number>} elements - The elements to be added to the element groups for combining
+     * @param {Map<DAMAGE_TYPE, number>} elements - The elements to be added to the element groups for combining
      */
     combine_(elementGroups, elements) {
         for (let [damageType, damageValue] of elements.entries()) {
@@ -273,7 +345,7 @@ class WeaponInstance {
      * @returns {WeaponDamageDistribution}
      */
     getModdedBaseDamage() {
-        return this.getBaseDamage().multiply(1 + this.getModdedStat(ModEffectType.DAMAGE));
+        return this.getBaseDamage().multiply(1 + this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE));
     }
 
     /**
@@ -284,7 +356,55 @@ class WeaponInstance {
      * @returns {WeaponDamageDistribution}
      */
     getDamage() {
-        let originalWeaponDamage = this.getBaseDamage();
+        // TODO check that the new changes by having getModdedBaseDamage instead of getBaseDamage have not affected times
+        let originalWeaponDamage = this.getModdedBaseDamage();
+        let totalBaseDamage = originalWeaponDamage.totalBaseDamage();
+
+        let innateElementsDamage = originalWeaponDamage.innateElements();
+
+        // TODO IPS mods
+
+        let elementModEffects = elementalModEffectTypes(); // list of ModEffectTypes as numbers
+        let moddedElements = new Map(); // map with key DamageType, value damage
+        // Check each mod for elemental effects
+        for (let modInstance of this.modInstances) {
+            if (modInstance === undefined) continue;
+            for (let elementModEffect of elementModEffects) {
+                // The mod has the elemental effect
+                // TODO could optimise this using effects.includes or something: put into function in ModInstance
+                let multiplier = modInstance.getRankedEffect(elementModEffect);
+                if (multiplier !== undefined) {
+                    let damageType = elementalModEffectToDamage(elementModEffect);
+                    let existingValue = moddedElements.get(damageType);
+                    moddedElements.set(damageType, existingValue === undefined ? totalBaseDamage * multiplier :
+                        totalBaseDamage * multiplier + existingValue);
+                    break; // TODO does not handle elemental mods with more than one element??
+                }
+            }
+        }
+
+        // All the elemental effects of the mods
+        let elementGroups = []; // list of Maps elements:[damageType] damage:number
+        this.combine_(elementGroups, moddedElements);
+        this.combine_(elementGroups, innateElementsDamage);
+
+        // TODO kuva / tenet bonus
+
+        let moddedWeaponDamage = new WeaponDamageDistribution();
+
+        // IPS TODO integrate with IPS mods
+        moddedWeaponDamage.add(DAMAGE_TYPE.IMPACT, originalWeaponDamage.get(DAMAGE_TYPE.IMPACT));
+        moddedWeaponDamage.add(DAMAGE_TYPE.PUNCTURE, originalWeaponDamage.get(DAMAGE_TYPE.PUNCTURE));
+        moddedWeaponDamage.add(DAMAGE_TYPE.SLASH, originalWeaponDamage.get(DAMAGE_TYPE.SLASH));
+
+        // Elements
+        for (let elementGroup of elementGroups) {
+            moddedWeaponDamage.add(Math.max(...elementGroup.get("elements")), elementGroup.get("damage"));
+        }
+
+        return moddedWeaponDamage;
+
+        /*let originalWeaponDamage = this.getBaseDamage();
         let totalBaseDamage = originalWeaponDamage.totalBaseDamage();
 
         let innateElementsDamage = originalWeaponDamage.innateElements();
@@ -332,7 +452,7 @@ class WeaponInstance {
         // Damage multiplier from damage mods e.g. Serration, Heavy Caliber
         let damageMultiplier = 1 + this.getModdedStat(ModEffectType.DAMAGE);
         moddedWeaponDamage = moddedWeaponDamage.multiply(damageMultiplier);
-        return moddedWeaponDamage;
+        return moddedWeaponDamage;*/
     }
 
     /**
@@ -342,7 +462,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getMultishot() {
-        return this.getActiveFiringMode().pellets * (1 + this.getModdedStat(ModEffectType.MULTISHOT));
+        return this.getActiveFiringMode().pellets * (1 + this.getModdedStat(MOD_EFFECT_TYPE.MULTISHOT));
     }
 
     /**
@@ -351,7 +471,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getCriticalChance() {
-        return this.getActiveFiringMode().criticalChance * (1 + this.getModdedStat(ModEffectType.CRITICAL_CHANCE));
+        return this.getActiveFiringMode().criticalChance * (1 + this.getModdedStat(MOD_EFFECT_TYPE.CRITICAL_CHANCE));
     }
 
     /**
@@ -360,7 +480,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getCriticalMultiplier() {
-        return this.getActiveFiringMode().criticalMultiplier * (1 + this.getModdedStat(ModEffectType.CRITICAL_DAMAGE));
+        return this.getActiveFiringMode().criticalMultiplier * (1 + this.getModdedStat(MOD_EFFECT_TYPE.CRITICAL_DAMAGE));
     }
 
     /**
@@ -369,8 +489,8 @@ class WeaponInstance {
      * @returns {number}
      */
     getStatusChance() {
-        return this.getActiveFiringMode().statusChance * (1 + this.getModdedStat(ModEffectType.STATUS_CHANCE)) +
-            this.getModdedStat(ModEffectType.STATUS_CHANCE_ADDITIVE);
+        return this.getActiveFiringMode().statusChance * (1 + this.getModdedStat(MOD_EFFECT_TYPE.STATUS_CHANCE)) +
+            this.getModdedStat(MOD_EFFECT_TYPE.STATUS_CHANCE_ADDITIVE);
     }
 
     /**
@@ -379,7 +499,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getStatusDurationMultiplier() {
-        return 1 + this.getModdedStat(ModEffectType.STATUS_DURATION);
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.STATUS_DURATION);
     }
 
     /**
@@ -388,7 +508,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getElectricMultiplier() {
-        return 1 + this.getModdedStat(ModEffectType.ELECTRIC);
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.ELECTRIC);
     }
 
     /**
@@ -397,7 +517,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getHeatMultiplier() {
-        return 1 + this.getModdedStat(ModEffectType.HEAT);
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.HEAT);
     }
 
     /**
@@ -406,7 +526,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getToxinMultiplier() {
-        return 1 + this.getModdedStat(ModEffectType.TOXIN);
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.TOXIN);
     }
 
     /**
@@ -415,22 +535,20 @@ class WeaponInstance {
      * @returns {number}
      */
     getFireRate() {
-        return this.getActiveFiringMode().fireRate * (1 + this.getModdedStat(ModEffectType.FIRE_RATE));
+        return this.getActiveFiringMode().fireRate * (1 + this.getModdedStat(MOD_EFFECT_TYPE.FIRE_RATE));
     }
 
-    // FIRE_RATE: 60,
+    /**
+     * Fetch the modded charge delay of the weapon on its current firing mode.
+     * Type 60.
+     * @returns {number}
+     */
     getChargeDelay() {
-        var MAIN = this;
+        return this.getActiveFiringMode().chargeDelay / (1 + this.getModdedStat(MOD_EFFECT_TYPE.FIRE_RATE));
+        /*var MAIN = this;
         return $_CalculateOrLoadProperty(this, 'ChargeDelay', function() {
             return MAIN.BaseChargeDelay / (1 + MAIN.$_GetModdedProperty(ModEffect.FIRE_RATE));
-        });
-    }
-
-    getBaseChargeDelay() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseChargeDelay', function() {
-            return MAIN.FiringMode.ChargeDelay;
-        });
+        });*/
     }
 
     /**
@@ -449,23 +567,28 @@ class WeaponInstance {
      * @returns {number} Time to reload a full magazine.
      */
     getReloadDuration() {
-        return this.weapon.baseReloadDuration / (1 + this.getModdedStat(ModEffectType.RELOAD_SPEED));
+        return this.getWeapon().baseReloadDuration / (1 + this.getModdedStat(MOD_EFFECT_TYPE.RELOAD_SPEED));
     }
 
-    // MAGAZINE_CAPACITY: 62,
-    // MAGAZINE_CAPACITY_ADDITIVE: 90,
+    /**
+     * Fetch the modded magazine size of the weapon on its current firing mode.
+     * Type 62, 90.
+     * @returns {number}
+     */
     getMagazineSize() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'MagazineSize', function() {
-            return MAIN.BaseMagazineSize * (1 + MAIN.$_GetModdedProperty(ModEffect.MAGAZINE_CAPACITY)) + MAIN.$_GetModdedProperty(ModEffect.MAGAZINE_CAPACITY_ADDITIVE);
-        });
+        return this.getWeapon().baseMagazineSize * (1 + this.getModdedStat(MOD_EFFECT_TYPE.MAGAZINE_CAPACITY)) +
+            this.getModdedStat(MOD_EFFECT_TYPE.MAGAZINE_CAPACITY_ADDITIVE);
     }
 
     getAmmoConsumption() {
         return this.getActiveFiringMode().ammoConsumption;
     }
 
-    // AMMO_CAPACITY: 63,
+    /**
+     * Fetch the modded ammo capacity of the weapon on its current firing mode.
+     * Type 63.
+     * @returns {number}
+     */
     getMaximumAmmo() {
         var MAIN = this;
         return $_CalculateOrLoadProperty(this, 'MaximumAmmo', function() {
@@ -473,201 +596,153 @@ class WeaponInstance {
         });
     }
 
-    // BANE_OF_GRINEER: 70,
-    // DAMAGE_TO_GRINEER: 70,
+    /**
+     * Fetch the modded Grineer damage of the weapon on its current firing mode.
+     * Type 70.
+     * @returns {number}
+     */
     getDamageToGrineer() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'DamageToGrineer', function() {
-            return MAIN.BaseDamageToGrineer + MAIN.$_GetModdedProperty(ModEffect.DAMAGE_TO_GRINEER);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_GRINEER);
     }
 
-    getBaseDamageToGrineer() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseDamageToGrineer', function() {
-            return 1;
-        });
-    }
-
-    // BANE_OF_CORPUS: 71,
-    // DAMAGE_TO_CORPUS: 71,
+    /**
+     * Fetch the modded Corpus damage of the weapon on its current firing mode.
+     * Type 71.
+     * @returns {number}
+     */
     getDamageToCorpus() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'DamageToCorpus', function() {
-            return MAIN.BaseDamageToCorpus + MAIN.$_GetModdedProperty(ModEffect.DAMAGE_TO_CORPUS);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_CORPUS);
     }
 
-    getBaseDamageToCorpus() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseDamageToCorpus', function() {
-            return 1;
-        });
-    }
 
-    // BANE_OF_INFESTED: 72,
-    // DAMAGE_TO_INFESTED: 72,
+    /**
+     * Fetch the modded Infested damage of the weapon on its current firing mode.
+     * Type 72.
+     * @returns {number}
+     */
     getDamageToInfested() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'DamageToInfested', function() {
-            return MAIN.BaseDamageToInfested + MAIN.$_GetModdedProperty(ModEffect.DAMAGE_TO_INFESTED);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_INFESTED);
     }
 
-    getBaseDamageToInfested() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseDamageToInfested', function() {
-            return 1;
-        });
-    }
-
-    // BANE_OF_CORRUPTED: 73,
-    // DAMAGE_TO_CORRUPTED: 73,
+    /**
+     * Fetch the modded Corrupted damage of the weapon on its current firing mode.
+     * Type 73.
+     * @returns {number}
+     */
     getDamageToCorrupted() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'DamageToCorrupted', function() {
-            return MAIN.BaseDamageToCorrupted + MAIN.$_GetModdedProperty(ModEffect.DAMAGE_TO_CORRUPTED);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_CORRUPTED);
     }
 
-    getBaseDamageToCorrupted() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseDamageToCorrupted', function() {
-            return 1;
-        });
-    }
-
-    // PUNCH_THROUGH: 80,
+    /**
+     * Fetch the modded punch through of the weapon on its current firing mode.
+     * Type 80.
+     * @returns {number}
+     */
     getPunchThrough() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'PunchThrough', function() {
-            return MAIN.BasePunchThrough + MAIN.$_GetModdedProperty(ModEffect.PUNCH_THROUGH);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.PUNCH_THROUGH);
     }
 
-    getBasePunchThrough() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BasePunchThrough', function() {
-            return 0;
-        });
-    }
-
-    // ACCURACY: 81,
+    /**
+     * Fetch the modded accuracy of the weapon on its current firing mode.
+     * Type 81.
+     * @returns {number}
+     */
     getAccuracy() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'Accuracy', function() {
-            return MAIN.BaseAccuracy + MAIN.$_GetModdedProperty(ModEffect.ACCURACY);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.ACCURACY);
     }
 
-    getBaseAccuracy() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseAccuracy', function() {
-            return 0;
-        });
-    }
-
-    // SPREAD: 82,
+    /**
+     * Fetch the modded spread of the weapon on its current firing mode.
+     * Type 82.
+     * @returns {number}
+     */
     getSpread() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'Spread', function() {
-            return MAIN.BaseSpread + MAIN.$_GetModdedProperty(ModEffect.SPREAD);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.SPREAD);
     }
 
-    getBaseSpread() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseSpread', function() {
-            return 0;
-        });
-    }
-
-    // RECOIL: 83,
+    /**
+     * Fetch the modded recoil of the weapon on its current firing mode.
+     * Type 83.
+     * @returns {number}
+     */
     getRecoil() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'Recoil', function() {
-            return MAIN.BaseRecoil + MAIN.$_GetModdedProperty(ModEffect.RECOIL);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.RECOIL);
     }
 
-    getBaseRecoil() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseRecoil', function() {
-            return 0;
-        });
-    }
-
-    // FLIGHT_SPEED: 84,
+    /**
+     * Fetch the modded flight speed of the weapon on its current firing mode.
+     * Type 84.
+     * @returns {number}
+     */
     getFlightSpeed() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'FlightSpeed', function() {
-            return MAIN.BaseFlightSpeed + MAIN.$_GetModdedProperty(ModEffect.FLIGHT_SPEED);
-        });
-    }
-
-    getBaseFlightSpeed() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'BaseFlightSpeed', function() {
-            return 1;
-        });
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.FLIGHT_SPEED);
     }
 
     getHeadshotMultiplier() {
-        return 1 + this.getModdedStat(ModEffectType.HEADSHOT_DAMAGE);
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.HEADSHOT_DAMAGE);
     }
 
-    // FIRST_SHOT_DAMAGE: 101,
+    /**
+     * Fetch the modded first shot damage of the weapon on its current firing mode.
+     * Type 101.
+     * @returns {number}
+     */
     getFirstShotDamage() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'FirstShotDamage', function() {
-            return 1 + MAIN.$_GetModdedProperty(ModEffect.FIRST_SHOT_DAMAGE);
-        });
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.FIRST_SHOT_DAMAGE);
     }
 
-    // LAST_SHOT_DAMAGE: 102,
+    /**
+     * Fetch the modded last shot damage of the weapon on its current firing mode.
+     * Type 102.
+     * @returns {number}
+     */
     getLastShotDamage() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'LastShotDamage', function() {
-            return 1 + MAIN.$_GetModdedProperty(ModEffect.LAST_SHOT_DAMAGE);
-        });
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.LAST_SHOT_DAMAGE);
     }
 
-    // EXPLOSION_CHANCE: 103,
+    /**
+     * Fetch the modded explosion chance of the weapon on its current firing mode.
+     * Type 103.
+     * @returns {number}
+     */
     getExplosionChance() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'ExplosionChance', function() {
-            return 0 + MAIN.$_GetModdedProperty(ModEffect.EXPLOSION_CHANCE);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.EXPLOSION_CHANCE);
     }
 
-    // DEAD_AIM: 106,
+    /**
+     * Fetch the modded dead aim of the weapon on its current firing mode.
+     * Type 106.
+     * @returns {number}
+     */
     getDeadAim() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'DeadAim', function() {
-            return 1 + MAIN.$_GetModdedProperty(ModEffect.DEAD_AIM);
-        });
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.DEAD_AIM);
     }
 
-    // AMMO_EFFICIENCY: 107,
+    /**
+     * Fetch the modded ammo efficiency of the weapon on its current firing mode.
+     * Type 107.
+     * @returns {number}
+     */
     getAmmoEfficiency() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'DeadAim', function() {
-            return 0 + MAIN.$_GetModdedProperty(ModEffect.AMMO_EFFICIENCY);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.AMMO_EFFICIENCY);
     }
 
-    // BODYSHOT_DAMAGE: 127,
+    /**
+     * Fetch the modded bodyshot multiplier of the weapon on its current firing mode.
+     * Type 127.
+     * @returns {number}
+     */
     getBodyshotMultiplier() {
-        return 1 + this.getModdedStat(ModEffectType.BODYSHOT_DAMAGE);
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.BODYSHOT_DAMAGE);
     }
 
     // Not specific to any faction at the moment, this function will be removed when faction multipliers become
     // specific to the faction of the enemy.
     getFactionMultiplier() {
-        return 1 + Math.max(this.getModdedStat(ModEffectType.DAMAGE_TO_GRINEER),
-            this.getModdedStat(ModEffectType.DAMAGE_TO_CORPUS),
-            this.getModdedStat(ModEffectType.DAMAGE_TO_INFESTED),
-            this.getModdedStat(ModEffectType.DAMAGE_TO_CORRUPTED));
+        return 1 + Math.max(this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_GRINEER),
+            this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_CORPUS),
+            this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_INFESTED),
+            this.getModdedStat(MOD_EFFECT_TYPE.DAMAGE_TO_CORRUPTED));
     }
 
     /**
@@ -675,7 +750,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getHunterMunitionsEffect() {
-        return this.getModdedStat(ModEffectType.HUNTER_MUNITIONS_EFFECT);
+        return this.getModdedStat(MOD_EFFECT_TYPE.HUNTER_MUNITIONS_EFFECT);
     }
 
     /**
@@ -683,7 +758,7 @@ class WeaponInstance {
      * @returns {number}
      */
     getInternalBleedingEffect() {
-        let bleeding = this.getModdedStat(ModEffectType.INTERNAL_BLEEDING_EFFECT);
+        let bleeding = this.getModdedStat(MOD_EFFECT_TYPE.INTERNAL_BLEEDING_EFFECT);
         return (this.getFireRate() < 2.5) ? 2 * bleeding : bleeding;
     }
 
@@ -692,55 +767,55 @@ class WeaponInstance {
      * @returns {number}
      */
     getVigilanteSetEffect() {
-        return this.getModdedStat(ModEffectType.VIGILANTE_SET_EFFECT);
+        return this.getModdedStat(MOD_EFFECT_TYPE.VIGILANTE_SET_EFFECT);
     }
 
-    // CONVECTRIX_EFFICIENCY: 421,
+    /**
+     * Fetch the Convectrix augment efficiency of the weapon on its current firing mode.
+     * Type 421.
+     * @returns {number}
+     */
     getAugmentConvectrixEfficiency() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'AugmentConvectrixEfficiency', function() {
-            return 0 + MAIN.$_GetModdedProperty(ModEffect.CONVECTRIX_EFFICIENCY);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.CONVECTRIX_EFFICIENCY);
     }
 
-    // LATRON_NEXT_SHOT_BONUS: 423,
+    /**
+     * Fetch the Latron augment next shot bonus of the weapon on its current firing mode.
+     * Type 423.
+     * @returns {number}
+     */
     getAugmentLatronNextShotBonus() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'AugmentLatronNextShotBonus', function() {
-            return 0 + MAIN.$_GetModdedProperty(ModEffect.LATRON_NEXT_SHOT_BONUS);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.LATRON_NEXT_SHOT_BONUS);
     }
 
-    // This exists for the damage bonus added by the buff, when it applies. LATRON_NEXT_SHOT_BONUS refers to the buff bonus per stage.
-    // LATRON_NEXT_SHOT_BONUS_BUFF: 423.5,
+    /**
+     * Fetch the Latron augment next shot bonus buff of the weapon on its current firing mode.
+     * This exists for the damage bonus added by the buff, when it applies.
+     * LATRON_NEXT_SHOT_BONUS refers to the buff bonus per stage.
+     * Type 423.5.
+     * @returns {number}
+     */
     getAugmentLatronNextShotBonusBuff() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'AugmentLatronNextShotBonusBuff', function() {
-            return 1 + MAIN.$_GetModdedProperty(ModEffect.LATRON_NEXT_SHOT_BONUS_BUFF);
-        });
+        return 1 + this.getModdedStat(MOD_EFFECT_TYPE.LATRON_NEXT_SHOT_BONUS_BUFF);
     }
 
-    // DAIKYU_DISTANCE_DAMAGE: 424,
+    /**
+     * Fetch the Daikyu augment distance damage bonus of the weapon on its current firing mode.
+     * Type 424.
+     * @returns {number}
+     */
     getAugmentDaikyuDistanceDamageBonus() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'AugmentDaikyuDistanceDamageBonus', function() {
-            return MAIN.$_GetModdedProperty(ModEffect.DAIKYU_DISTANCE_DAMAGE) > 0
-                ? 1.4  //If the mod bonus exists, it's always 140%
-                : 1.0; //If the mod bonus doesn't exist, it's 100%
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.DAIKYU_DISTANCE_DAMAGE) > 0 ? 1.4 : 1;
     }
 
-    // SOMA_PRIME_HIT_CRITICAL: 426,
+    /**
+     * Fetch the Soma Prime augment critical chance of the weapon on its current firing mode.
+     * Type 426.
+     * @returns {number}
+     */
     getAugmentSomaPrimeHitCriticalChance() {
-        var MAIN = this;
-        return $_CalculateOrLoadProperty(this, 'AugmentSomaPrimeHitCriticalChance', function() {
-            return 0 + MAIN.$_GetModdedProperty(ModEffect.SOMA_PRIME_HIT_CRITICAL);
-        });
+        return this.getModdedStat(MOD_EFFECT_TYPE.SOMA_PRIME_HIT_CRITICAL);
     }
-
-
-
-
 
     /**
      * Returns an object mapping keys (ModEffectType id's) to their strength.
@@ -836,7 +911,7 @@ class WeaponInstance {
     }
 
     reload() {
-        this.remainingMagazine = this.weapon.baseMagazineSize;
+        this.remainingMagazine = this.getWeapon().baseMagazineSize;
         this.currentShotDelay = 0;
         this.currentChargeDelay = 0;
     }

@@ -1,8 +1,8 @@
-const {WeaponDamageDistribution} = require("./weapon-damage-distribution");
-const {DamageType} = require('./magic-types');
+const {WeaponDamageDistribution} = require("./weaponDamageDistribution");
+const {DAMAGE_TYPE} = require('../utils/magicTypes');
 const {Proc} = require('./proc');
-const {ResistanceType} = require('./resistance-type');
-const {replacer, reviver} = require('./map-util');
+const {ResistanceType} = require('./resistanceType');
+const {replacer, reviver} = require('../utils/mapUtils');
 
 class Enemy {
     constructor() {
@@ -12,11 +12,8 @@ class Enemy {
 
         this.baseLevel = undefined;
         this.baseHealth = undefined;
-        this.healthTypeId = undefined;
         this.baseArmor = undefined;
-        this.armorTypeId = undefined;
         this.baseShield = undefined;
-        this.shieldTypeId = undefined;
 
         this.healthType = undefined;
         this.armorType = undefined;
@@ -42,18 +39,6 @@ class Enemy {
         if (plainObject.shieldType != null)
             this.shieldType = Object.setPrototypeOf(plainObject.shieldType, ResistanceType.prototype);
         return Object.setPrototypeOf(plainObject, Enemy.prototype)
-    }
-
-    /**
-     * Returns an Enemy from its ID.
-     * @param id
-     * @returns {Promise<Enemy>}
-     */
-    static async fromID(id) {
-        if (id == null) return null;
-        const {getEnemies} = require('../data/game');
-        let enemyData = await getEnemies();
-        return enemyData[id];
     }
 
     // Getters
@@ -103,13 +88,8 @@ class Enemy {
         return this;
     }
 
-    setHealthTypeId(healthTypeId) {
-        this.healthTypeId = healthTypeId;
-        return this;
-    }
-
-    async setHealthType() {
-        this.healthType = await ResistanceType.healthTypeFromID(this.healthTypeId);
+    setHealthType(healthType) {
+        this.healthType = healthType;
         return this;
     }
 
@@ -118,13 +98,8 @@ class Enemy {
         return this;
     }
 
-    setArmorTypeId(armorTypeId) {
-        this.armorTypeId = armorTypeId;
-        return this;
-    }
-
-    async setArmorType() {
-        this.armorType = await ResistanceType.armorTypeFromID(this.armorTypeId);
+    setArmorType(armorType) {
+        this.armorType = armorType;
         return this;
     }
 
@@ -133,13 +108,8 @@ class Enemy {
         return this;
     }
 
-    setShieldTypeId(shieldTypeId) {
-        this.shieldTypeId = shieldTypeId;
-        return this;
-    }
-
-    async setShieldType() {
-        this.shieldType = await ResistanceType.shieldTypeFromID(this.shieldTypeId);
+    setShieldType(shieldType) {
+        this.shieldType = shieldType;
         return this;
     }
 
@@ -166,31 +136,31 @@ class EnemyInstance {
      * @param {number} level
      */
     constructor(enemy, level) {
-        /** @type {Enemy} - Base enemy for simulation */
+        /** @private {Enemy} - Base enemy for simulation */
         this.enemy = enemy;
 
-        /** @type {number} - Enemy level for simulation */
+        /** @private {number} - Enemy level for simulation */
         this.level = level;
 
-        /** @type {number} - Remaining health of the enemy */
+        /** @private {number} - Remaining health of the enemy */
         this.currentHealth = this.calculateStartingHealth();
 
-        /** @type {number} - Remaining armor of the enemy */
+        /** @private {number} - Remaining armor of the enemy */
         this.armor = this.calculateStartingArmor(); // should not ever change from base
 
-        /** @type {number} - Remaining shield of the enemy */
+        /** @private {number} - Remaining shield of the enemy */
         this.currentShield = this.calculateStartingShield();
 
-        /** @type {Map<number, Proc[]>} - Active procs on the enemy, organised into lists by type. See DamageType */
+        /** @private {Map<number, Proc[]>} - Active procs on the enemy, organised into lists by type. See DamageType */
         this.procs = new Map();
-        for (let [dummy, damageType] of Object.entries(DamageType)) {
+        for (let [dummy, damageType] of Object.entries(DAMAGE_TYPE)) {
             this.procs.set(damageType, []);
         }
 
         // TODO heat armor strip duration counters, heat damage total (don't record in each proc) <-- use latter in addProcs
 
 
-        /** @type {number} - How long the enemy is shield gated for */
+        /** @private {number} - How long the enemy is shield gated for */
         this.shieldGatedDuration = 0;
     }
 
@@ -215,6 +185,13 @@ class EnemyInstance {
         return Object.setPrototypeOf(plainObject, EnemyInstance.prototype);
     }
 
+    /**
+     * @returns {EnemyInstance}
+     */
+    clone() {
+        return EnemyInstance.deserialize(this.serialize());
+    }
+
     // Getters
     getEnemy() {
         return this.enemy;
@@ -236,26 +213,30 @@ class EnemyInstance {
 
     // TODO does not currently use ramp up and ramp down, is just a flat 50%
     getHeatMultiplier() {
-        return this.procs.get(DamageType.HEAT).length === 0 ? 1 : 0.5;
+        return this.procs.get(DAMAGE_TYPE.HEAT).length === 0 ? 1 : 0.5;
     }
 
     getCorrosiveMultiplier() {
-        let numCorrosiveProcs = this.procs.get(DamageType.CORROSIVE).length;
+        let numCorrosiveProcs = this.procs.get(DAMAGE_TYPE.CORROSIVE).length;
         return (numCorrosiveProcs === 0) ? 1 : 0.8 - 0.06 * numCorrosiveProcs;
     }
 
     getMagneticMultiplier() {
-        let numMagneticProcs = this.procs.get(DamageType.MAGNETIC).length;
+        let numMagneticProcs = this.procs.get(DAMAGE_TYPE.MAGNETIC).length;
         return (numMagneticProcs === 0) ? 1 : 1.75 + 0.25 * numMagneticProcs;
     }
 
     getViralMultiplier() {
-        let numViralProcs = this.procs.get(DamageType.VIRAL).length;
+        let numViralProcs = this.procs.get(DAMAGE_TYPE.VIRAL).length;
         return (numViralProcs === 0) ? 1 : 1.75 + 0.25 * numViralProcs;
     }
 
     isAlive() {
         return this.currentHealth > 0;
+    }
+
+    hasArmor() {
+        return this.getArmor() > 0;
     }
 
     hasShields() {
@@ -320,58 +301,63 @@ class EnemyInstance {
         }
     }
 
-    /**
-     *
-     * @param weaponDamageDistribution {WeaponDamageDistribution}
-     */
-    dealDamage(weaponDamageDistribution) {
+    dealDamage(dmgDists, totalMultiplier) {
+        if (totalMultiplier === 0) return;
+
         // Deal toxin damage directly to health
-        let remainingDmgDist = this.damageToxin(weaponDamageDistribution);
+        // TODO may/may not need to move this after shields? check simultaneous shield gating activation and toxin damage
+        let toxinDamage = WeaponDamageDistribution.fromEnemyState(dmgDists, this, false);
+        this.damageToxin(toxinDamage, totalMultiplier);
 
         // Total damage to be done to shields, if there are any shields
+        let damageRemainingMultiplier = 1;
         if (this.isAlive() && this.hasShields()) {
-            remainingDmgDist = this.damageShield(remainingDmgDist);
+            let shieldDamage = WeaponDamageDistribution.fromEnemyState(dmgDists, this, true).setToxin(0);
+            damageRemainingMultiplier = this.damageShield(shieldDamage, totalMultiplier);
         }
 
         // Total damage to be done to health
         if (this.isAlive()) {
-            this.damageHealth(remainingDmgDist);
+            let healthDamage = WeaponDamageDistribution.fromEnemyState(dmgDists, this, false).setToxin(0);
+            this.damageHealth(healthDamage, totalMultiplier * damageRemainingMultiplier);
         }
     }
 
-    damageToxin(weaponDamageDistribution) {
-         let dmgDistToHealth = weaponDamageDistribution
-             .afterAllHealthResistances(this.getEnemy().getHealthType(), this.getEnemy().getArmorType(), this.getArmor())
-             .multiply(this.getViralMultiplier());
+    /**
+     *
+     * @param weaponDamageDistribution
+     * @param totalMultiplier
+     */
+    damageToxin(weaponDamageDistribution, totalMultiplier) {
+        // Health and armor multipliers have been precalculated
 
-         let amtDmg = dmgDistToHealth.getToxin();
-         let actualDamage = this.decreaseHealth(amtDmg);
-
-         return weaponDamageDistribution.clone()
-             .setToxin(weaponDamageDistribution.getToxin() * (amtDmg - actualDamage) / amtDmg);
+         let amtDmg = weaponDamageDistribution.getToxin() * this.getViralMultiplier() * totalMultiplier;
+         this.decreaseHealth(amtDmg);
     }
 
-    damageHealth(weaponDamageDistribution) {
+    damageHealth(weaponDamageDistribution, totalMultiplier) {
+        // Health and armor multipliers have been precalculated
+
         // See https://warframe.fandom.com/wiki/Damage#Damage_Calculation and
         // https://warframe.fandom.com/wiki/Armor for more detailed explanations.
         // If x% of the damage was dealt to the shields, (100-x)% of the damage will be dealt to health.
         let shieldGatingMultiplier = this.isShieldGated() /*&& !isHeadshot*/ ? 0.05 : 1; // TODO headshot overrides shieldgate
 
-        let dmgDistToHealth = weaponDamageDistribution
-             .afterAllHealthResistances(this.getEnemy().getHealthType(), this.getEnemy().getArmorType(), this.getArmor())
-             .multiply(shieldGatingMultiplier * this.getViralMultiplier());
-
-        let amtDmg = dmgDistToHealth.totalBaseDamage();
-        let actualDamage = this.decreaseHealth(amtDmg);
+        let amtDmg = weaponDamageDistribution.totalBaseDamage() * shieldGatingMultiplier * this.getViralMultiplier() * totalMultiplier;
+        this.decreaseHealth(amtDmg);
     }
 
-    damageShield(weaponDamageDistribution) {
-        let dmgDistToShield = weaponDamageDistribution
-            .afterShieldResistances(this.getEnemy().getShieldType())
-            .multiply(this.getMagneticMultiplier());
+    /**
+     *
+     * @param weaponDamageDistribution
+     * @param totalMultiplier
+     * @returns {number} - Proportion of damage remaining to be dealt.
+     */
+    damageShield(weaponDamageDistribution, totalMultiplier) {
+        // Shield multiplier has been precalculated
 
         // Deal the damage to the shields
-        let amtDmg = dmgDistToShield.totalBaseDamage();
+        let amtDmg = weaponDamageDistribution.totalBaseDamage() * this.getMagneticMultiplier() * totalMultiplier;
         let actualDamage = this.decreaseShield(amtDmg);
 
         // All shields gone from this hit; shield gating
@@ -379,17 +365,29 @@ class EnemyInstance {
             this.shieldGatedDuration = 0.1;
         }
 
-        return weaponDamageDistribution.clone()
-             .multiply((amtDmg - actualDamage) / amtDmg);
+        return (amtDmg - actualDamage) / amtDmg;
     }
 
     dealProcDamage() {
-        for (let [damageType, procs] of this.procs.entries()) {
-            for (let proc of procs) {
-                if (proc.getDamage() !== 0) {
-                    this.dealDamage(proc.toWeaponDamageDistribution());
-                }
+        let damageDistribution = Proc.damageDistributionOfProcs(this.procs);
+        if (damageDistribution.totalBaseDamage() === 0) return;
+
+        // Total damage to be done to shields, if there are any shields
+        let damageRemainingMultiplier = 1;
+        if (this.isAlive() && this.hasShields()) {
+            let shieldDamage = damageDistribution.afterShieldResistances(this.getEnemy().getShieldType());
+            damageRemainingMultiplier = this.damageShield(shieldDamage, 1);
+        }
+
+        // Total damage to be done to health
+        if (this.isAlive()) {
+            let healthDamage = damageDistribution.afterHealthResistances(this.getEnemy().getHealthType());
+            if (this.hasArmor()) {
+                healthDamage = healthDamage
+                    .afterArmorTypeResistances(this.getEnemy().getArmorType())
+                    .afterNetArmorResistances(this.getEnemy().getArmorType(), this.getArmor());
             }
+            this.damageHealth(healthDamage, damageRemainingMultiplier);
         }
     }
 
@@ -425,7 +423,7 @@ class EnemyInstance {
      */
     addProcs(procs) {
         for (let proc of procs) {
-            if (proc.getType() === DamageType.HEAT) {
+            if (proc.getType() === DAMAGE_TYPE.HEAT) {
                 let heatProcs = this.procs.get(proc.getType());
                 if (heatProcs.length === 0) {
                     heatProcs.push(proc);
@@ -446,57 +444,57 @@ class EnemyInstance {
      */
     capExtraProcs() {
         // Impact
-        let numImpact = this.procs.get(DamageType.IMPACT).length;
+        let numImpact = this.procs.get(DAMAGE_TYPE.IMPACT).length;
         if (numImpact > 10) {
-            this.procs.get(DamageType.IMPACT).splice(0, numImpact - 10);
+            this.procs.get(DAMAGE_TYPE.IMPACT).splice(0, numImpact - 10);
         }
 
         // Puncture
-        let numPuncture = this.procs.get(DamageType.PUNCTURE).length;
+        let numPuncture = this.procs.get(DAMAGE_TYPE.PUNCTURE).length;
         if (numPuncture > 10) {
-            this.procs.get(DamageType.PUNCTURE).splice(0, numPuncture - 10);
+            this.procs.get(DAMAGE_TYPE.PUNCTURE).splice(0, numPuncture - 10);
         }
 
         // Cold
-        let numCold = this.procs.get(DamageType.COLD).length;
+        let numCold = this.procs.get(DAMAGE_TYPE.COLD).length;
         if (numCold > 10) {
-            this.procs.get(DamageType.COLD).splice(0, numCold - 10);
+            this.procs.get(DAMAGE_TYPE.COLD).splice(0, numCold - 10);
         }
 
         // Blast
-        let numBlast = this.procs.get(DamageType.BLAST).length;
+        let numBlast = this.procs.get(DAMAGE_TYPE.BLAST).length;
         if (numBlast > 10) {
-            this.procs.get(DamageType.BLAST).splice(0, numBlast - 10);
+            this.procs.get(DAMAGE_TYPE.BLAST).splice(0, numBlast - 10);
         }
 
         // Corrosive
-        let numCorrosive = this.procs.get(DamageType.CORROSIVE).length;
+        let numCorrosive = this.procs.get(DAMAGE_TYPE.CORROSIVE).length;
         if (numCorrosive > 10) {
-            this.procs.get(DamageType.CORROSIVE).splice(0, numCorrosive - 10);
+            this.procs.get(DAMAGE_TYPE.CORROSIVE).splice(0, numCorrosive - 10);
         }
 
         // Gas
-        let numGas = this.procs.get(DamageType.GAS).length;
+        let numGas = this.procs.get(DAMAGE_TYPE.GAS).length;
         if (numGas > 10) {
-            this.procs.get(DamageType.GAS).splice(0, numGas - 10);
+            this.procs.get(DAMAGE_TYPE.GAS).splice(0, numGas - 10);
         }
 
         // Magnetic
-        let numMagnetic = this.procs.get(DamageType.MAGNETIC).length;
+        let numMagnetic = this.procs.get(DAMAGE_TYPE.MAGNETIC).length;
         if (numMagnetic > 10) {
-            this.procs.get(DamageType.MAGNETIC).splice(0, numMagnetic - 10);
+            this.procs.get(DAMAGE_TYPE.MAGNETIC).splice(0, numMagnetic - 10);
         }
 
         // Radiation
-        let numRadiation = this.procs.get(DamageType.RADIATION).length;
+        let numRadiation = this.procs.get(DAMAGE_TYPE.RADIATION).length;
         if (numRadiation > 10) {
-            this.procs.get(DamageType.RADIATION).splice(0, numRadiation - 10);
+            this.procs.get(DAMAGE_TYPE.RADIATION).splice(0, numRadiation - 10);
         }
 
         // Viral
-        let numViral = this.procs.get(DamageType.VIRAL).length;
+        let numViral = this.procs.get(DAMAGE_TYPE.VIRAL).length;
         if (numViral > 10) {
-            this.procs.get(DamageType.VIRAL).splice(0, numViral - 10);
+            this.procs.get(DAMAGE_TYPE.VIRAL).splice(0, numViral - 10);
         }
         return this;
     }

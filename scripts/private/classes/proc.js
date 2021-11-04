@@ -1,5 +1,5 @@
-const {WeaponDamageDistribution} = require("./weapon-damage-distribution");
-const {DamageType, ModEffectType} = require('./magic-types');
+const {WeaponDamageDistribution} = require("./weaponDamageDistribution");
+const {DAMAGE_TYPE, MOD_EFFECT_TYPE} = require('../utils/magicTypes');
 
 class Proc {
     constructor(damageType, moddedBaseDamage, weaponInstance) {
@@ -17,68 +17,68 @@ class Proc {
         this.totalDuration = 0;
 
         switch (damageType) {
-            case (DamageType.IMPACT):
+            case (DAMAGE_TYPE.IMPACT):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 1;
                 break;
-            case (DamageType.PUNCTURE):
+            case (DAMAGE_TYPE.PUNCTURE):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 6;
                 break;
-            case (DamageType.SLASH):
-                this.damageType = DamageType.TRUE;
+            case (DAMAGE_TYPE.SLASH):
+                this.damageType = DAMAGE_TYPE.TRUE;
                 this.damage = 0.35 * moddedBaseDamage;
                 this.duration = 6;
                 break;
-            case (DamageType.COLD):
+            case (DAMAGE_TYPE.COLD):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 6;
                 break;
-            case (DamageType.ELECTRIC):
+            case (DAMAGE_TYPE.ELECTRIC):
                 this.damageType = damageType;
                 this.damage = 0.5 * moddedBaseDamage * weaponInstance.getElectricMultiplier();
                 this.duration = 6;
                 break;
-            case (DamageType.HEAT):
+            case (DAMAGE_TYPE.HEAT):
                 this.damageType = damageType;
                 this.damage = 0.5 * moddedBaseDamage * weaponInstance.getHeatMultiplier();
                 this.duration = 6;
                 this.stacks = 1;
                 break;
-            case (DamageType.TOXIN):
+            case (DAMAGE_TYPE.TOXIN):
                 this.damageType = damageType;
                 this.damage = 0.5 * moddedBaseDamage * weaponInstance.getToxinMultiplier();
                 this.duration = 6;
                 break;
-            case (DamageType.BLAST):
+            case (DAMAGE_TYPE.BLAST):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 6;
                 break;
-            case (DamageType.CORROSIVE):
+            case (DAMAGE_TYPE.CORROSIVE):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 8;
                 break;
-            case (DamageType.GAS):
+            case (DAMAGE_TYPE.GAS):
                 this.damageType = damageType;
                 this.damage = 0.5 * moddedBaseDamage;
                 this.duration = 6;
                 break;
-            case (DamageType.MAGNETIC):
+            case (DAMAGE_TYPE.MAGNETIC):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 6;
                 break;
-            case (DamageType.RADIATION):
+            case (DAMAGE_TYPE.RADIATION):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 12;
                 break;
-            case (DamageType.VIRAL):
+            case (DAMAGE_TYPE.VIRAL):
                 this.damageType = null;
                 this.damage = 0;
                 this.duration = 6;
@@ -119,29 +119,29 @@ class Proc {
 
     getNextEventTimeStep() {
         switch (this.type) {
-            case (DamageType.IMPACT):
-            case (DamageType.PUNCTURE):
-            case (DamageType.COLD):
-            case (DamageType.BLAST):
-            case (DamageType.CORROSIVE):
-            case (DamageType.MAGNETIC):
-            case (DamageType.RADIATION):
-            case (DamageType.VIRAL):
+            case (DAMAGE_TYPE.IMPACT):
+            case (DAMAGE_TYPE.PUNCTURE):
+            case (DAMAGE_TYPE.COLD):
+            case (DAMAGE_TYPE.BLAST):
+            case (DAMAGE_TYPE.CORROSIVE):
+            case (DAMAGE_TYPE.MAGNETIC):
+            case (DAMAGE_TYPE.RADIATION):
+            case (DAMAGE_TYPE.VIRAL):
                 // Removal at duration 0
                 return this.getRemainingDuration();
-            case (DamageType.SLASH):
+            case (DAMAGE_TYPE.SLASH):
                 // Damage ticks at elapsed duration: 1 2 ... Math.floor(this.duration)
                 // Removal at elapsed duration: this.duration
-            case (DamageType.ELECTRIC):
+            case (DAMAGE_TYPE.ELECTRIC):
                 // Damage ticks at elapsed duration: 0 1 2 ... Math.ceiling(this.duration) - 1
                 // Removal at elapsed duration: this.duration
-            case (DamageType.HEAT):
+            case (DAMAGE_TYPE.HEAT):
                 // Damage ticks at elapsed duration: 1 2 ... Math.floor(this.duration)
                 // Removal at elapsed duration: this.duration
-            case (DamageType.TOXIN):
+            case (DAMAGE_TYPE.TOXIN):
                 // Damage ticks at elapsed duration: 1 2 ... Math.floor(this.duration)
                 // Removal at elapsed duration: this.duration
-            case (DamageType.GAS):
+            case (DAMAGE_TYPE.GAS):
                 // Damage ticks at elapsed duration: 0 1 2 ... Math.ceiling(this.duration) - 1
                 // Removal at elapsed duration: this.duration
 
@@ -187,6 +187,49 @@ class Proc {
     toWeaponDamageDistribution() {
         return new WeaponDamageDistribution()
             .set(this.getDamageType(), this.getDamage());
+    }
+
+    /**
+     *
+     * @param {Map<number, Proc[]>} procs
+     * @returns {WeaponDamageDistribution} - The total damage of all the procs.
+     */
+    static damageDistributionOfProcs(procs) {
+        let damagingProcs = [];
+        for (let damageType of [DAMAGE_TYPE.SLASH, DAMAGE_TYPE.ELECTRIC, DAMAGE_TYPE.HEAT, DAMAGE_TYPE.TOXIN, DAMAGE_TYPE.GAS]) {
+            damagingProcs.push(...(procs.get(damageType).filter(proc => proc.getRemainingDuration() === 0 && proc.getDamage() !== 0)));
+        }
+
+        return WeaponDamageDistribution.coalesce(damagingProcs.map(proc => proc.toWeaponDamageDistribution()));
+    }
+
+    /**
+     * @private
+     * @param {Proc[]} procs
+     * @param {number} type - See DamageType
+     * @returns {boolean} - Whether or not the list of procs contains a damage type.
+     */
+    static hasProcType_(procs, type) {
+        for (let proc of procs) {
+            if (proc.getType() === type) return true;
+        }
+        return false;
+    }
+
+    /**
+     * @param {Proc[]} procs
+     * @returns {boolean} Whether or not the list of procs contains a slash proc.
+     */
+    static hasSlash(procs) {
+        return Proc.hasProcType_(procs, DAMAGE_TYPE.SLASH);
+    }
+
+    /**
+     * @param {Proc[]} procs
+     * @returns {boolean} Whether or not the list of procs contains an impact proc.
+     */
+    static hasImpact(procs) {
+        return Proc.hasProcType_(procs, DAMAGE_TYPE.IMPACT);
     }
 
 }

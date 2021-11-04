@@ -1,5 +1,5 @@
-const {WeaponDamageDistribution} = require("./weapon-damage-distribution");
-const {reviver} = require('./map-util');
+const {WeaponDamageDistribution} = require("./weaponDamageDistribution");
+const {reviver} = require('../utils/mapUtils');
 
 class WeaponResiduals {
     constructor() {

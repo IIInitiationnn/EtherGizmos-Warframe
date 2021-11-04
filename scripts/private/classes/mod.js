@@ -1,7 +1,4 @@
-const {usefulModEffectTypes} = require("./magic-types");
-const {replacer, reviver} = require('./map-util');
-// const superconsole = require('../../../../../scripts/logging/superconsole');
-// const avro = require('avsc');
+const {replacer, reviver} = require('../utils/mapUtils');
 
 class Mod {
     constructor() {
@@ -14,13 +11,13 @@ class Mod {
         this.maxRank = undefined;
         this.polarity = undefined;
 
-        /** @type {Map<ModEffectType, number>} - ModEffectType: Power */
+        /** @type {Map<number, number>} - ModEffectType: Power */
         this.effects = new Map();
 
-        /** @type {Map<number, Map<ModEffectType, number>>} - Rank: {ModEffectType: Power} */
+        /** @type {Map<number, Map<number, number>>} - Rank: {ModEffectType: Power} */
         this.effectsRanked = new Map();
 
-        /** @type {Map<ModEffectType, string>} ModEffectType: Description */
+        /** @type {Map<number, string>} ModEffectType: Description */
         this.effectDescriptions = new Map();
     }
 
@@ -42,11 +39,7 @@ class Mod {
         return Object.setPrototypeOf(plainObject, Mod.prototype);
     }
 
-    /**
-     * Returns a Mod from its ID.
-     * @param id
-     * @returns {Promise<void>}
-     */
+    // TODO modInstance stuff to be done
     static async fromID(id) {
         if (id == null) return null;
         const {getMods} = require("../data/game");
@@ -105,7 +98,7 @@ class Mod {
         return mod;*/
     }
 
-    getID() {
+    getId() {
         return this.id;
     }
 
@@ -115,7 +108,7 @@ class Mod {
 
     /**
      *
-     * @returns {Map<ModEffectType, number>}
+     * @returns {Map<number, number>} - See ModEffectType.
      */
     getEffects() {
         return this.effects;
@@ -123,7 +116,7 @@ class Mod {
 
     /**
      *
-     * @param {ModEffectType} effectType
+     * @param {number} effectType - See ModEffectType.
      * @returns {number}
      */
     getEffect(effectType) {
@@ -201,35 +194,6 @@ class Mod {
         return weapon.modTypes.indexOf(this.modType) >= 0 || this.modType === 9999;
 
     }
-
-    /**
-     *
-     * @param {Weapon} weapon - The weapon type for which compatible mods will be returned.
-     * @param {boolean} removeUselessMods - Whether or not to ignore mods which will not affect the simulation.
-     * @returns {Mod[]} - A list of mods which are compatible with this weapon.
-     */
-    static async getValidModsFor(weapon, removeUselessMods = true) {
-        const {getMods} = require('../data/game');
-
-        /** @type Mod[] */
-        let validMods = [];
-
-        for (let mod of Object.values(await getMods())) {
-            // Filter out all the mods incompatible with the WEAPON
-            if (mod.isCompatibleWithWeapon(weapon)) validMods.push(mod);
-        }
-
-        if (removeUselessMods) {
-            let usefulEffects = usefulModEffectTypes();
-            for (let i = 0; i < validMods.length; i++) {
-                // If the mod does not contain any effects deemed useful, remove it from the valid mods list
-                if (!usefulEffects.some(effectType => Object.keys(validMods[i].effects).includes(effectType.toString()))) {
-                    validMods.slice(i, 1);
-                }
-            }
-        }
-        return validMods;
-    }
 }
 
 class ModInstance {
@@ -237,10 +201,6 @@ class ModInstance {
         /** @type Mod */
         this.mod = mod;
         this.rank = mod.getMaxRank();
-    }
-
-    static async fromModID(id) {
-        return new this(await Mod.fromID(id));
     }
 
     /**
@@ -295,6 +255,25 @@ class ModInstance {
     }
 
     /**
+     * Checks if this mod is compatible with all existing mods in the list.
+     * @param {ModInstance[]} existingMods
+     * @returns {boolean}
+     */
+    isCompatible(existingMods) {
+        return existingMods
+            .filter(existingMod => existingMod.mod.getId() === this.mod.getId())
+            .length === 0;
+
+        /*let s = 'serration';
+        let aS = 'amalgam-serration';
+        let serrations = [s, aS];
+        if ((existingMods.includes(s) || existingMods.includes(aS)) && serrations.includes(newMod)) {
+            return false;
+        }*/
+        // TODO change to check for incompatibility instead, would be Mod.isCompatibleWithMods, same signature
+    }
+
+    /**
      * Set the rank of this mod.
      * @param rank
      * @returns {ModInstance}
@@ -302,6 +281,19 @@ class ModInstance {
     setRank(rank) {
         this.rank = Math.max(Math.min(rank, this.mod.maxRank), 0);
         return this;
+    }
+
+    static async fromModID(id) {
+        const {Data} = require('../data/game');
+        return new this(await Data.getMod(id));
+    }
+
+    static async fromModIds(ids) {
+        let modInstances = [];
+        for (let id of ids) {
+            modInstances.push(await ModInstance.fromModID(id));
+        }
+        return modInstances;
     }
 }
 

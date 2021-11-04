@@ -1,46 +1,10 @@
-const {WeaponDamageDistribution} = require('./weapon-damage-distribution');
+const {WeaponDamageDistribution} = require('./weaponDamageDistribution');
 
 class ResistanceType {
     constructor() {
         this.id = undefined;
         this.name = undefined;
         this.resistances = new WeaponDamageDistribution();
-    }
-
-    /**
-     * Returns a health type from its ID.
-     * @param id
-     * @returns {Promise<ResistanceType>}
-     */
-    static async healthTypeFromID(id) {
-        if (id == null) return null;
-        const {getHealthTypes} = require('../data/game');
-        let healthTypeData = await getHealthTypes();
-        return healthTypeData[id];
-    }
-
-    /**
-     * Returns an armor type from its ID.
-     * @param id
-     * @returns {Promise<ResistanceType>}
-     */
-    static async armorTypeFromID(id) {
-        if (id == null) return null;
-        const {getArmorTypes} = require('../data/game');
-        let armorTypeData = await getArmorTypes();
-        return armorTypeData[id];
-    }
-
-    /**
-     * Returns a shield type from its ID.
-     * @param id
-     * @returns {Promise<ResistanceType>}
-     */
-    static async shieldTypeFromID(id) {
-        if (id == null) return null;
-        const {getShieldTypes} = require('../data/game');
-        let shieldTypeData = await getShieldTypes();
-        return shieldTypeData[id];
     }
 
     setId(id) {

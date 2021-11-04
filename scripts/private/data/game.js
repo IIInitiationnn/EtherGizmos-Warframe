@@ -1,65 +1,165 @@
 const async = require('async');
 const superconsole = require('../../../../../scripts/logging/superconsole');
-const {WeaponResiduals} = require('../classes/weapon-residuals');
+const {usefulModEffectTypes} = require('../utils/magicTypes');
+const {WeaponResiduals} = require('../classes/weaponResiduals');
 const {conn} = require('../sql/connection');
 const {Weapon} = require('../classes/weapon');
 const {Mod} = require('../classes/mod');
 const {Enemy} = require('../classes/enemy');
-const {ResistanceType} = require('../classes/resistance-type');
-const {WeaponFiringMode} = require('../classes/weapon-firing-mode');
-const {WeaponDamageDistribution} = require('../classes/weapon-damage-distribution');
+const {ResistanceType} = require('../classes/resistanceType');
+const {WeaponFiringMode} = require('../classes/weaponFiringMode');
+const {WeaponDamageDistribution} = require('../classes/weaponDamageDistribution');
 
-let lastUpdated = new Date(0);
-let isUpdating = false;
-let updatePromise = null;
-let weaponData = null;
-let modData = null;
-let modEffectData = null;
-let enemyData = null;
-let healthTypeData = null;
-let armorTypeData = null;
-let shieldTypeData = null;
+class Data {
+    /** Update Information */
+    static lastUpdated_ = null;
 
-//console.log('initial:', lastUpdated)
+    /** Weapons */
+    static weaponData_ = null;
 
-function tryUpdateData() {
-    if (!isUpdating) {
-        updatePromise = new Promise(function (resolve) {
-            if ((new Date().getTime() - lastUpdated.getTime()) > 3600000) {
-                isUpdating = true;
-                updateData().then(() => {
-                    isUpdating = false;
-                    resolve();
-                });
-            } else {
-                resolve();
-            }
-        });
+    /** Mods */
+    static modData_ = null;
+    static modEffectData_ = null;
+
+    /** Resistances */
+    static healthTypeData_ = null;
+    static armorTypeData_ = null;
+    static shieldTypeData_ = null;
+
+    /** Enemies */
+    static enemyData_ = null;
+
+    /**
+     * Returns a Weapon from its ID.
+     * @param id
+     * @returns {Promise<Weapon>}
+     */
+    static async getWeapon(id) {
+        return (await Data.getWeapons())[id];
     }
 
-    return updatePromise;
-}
+    static async getWeapons() {
+        await Data.tryUpdateData_()
+        return Data.weaponData_;
+    }
 
-function updateData() {
-    return new Promise(function (resolve) {
-        let wepPromise = updateWeapons();
-        let modPromise = updateMods();
-        let mefPromise = updateModEffects();
-        let resPromise = updateResistanceTypes();
+    /**
+     * Returns a Mod from its ID.
+     * @param id
+     * @returns {Promise<Mod>}
+     */
+    static async getMod(id) {
+        return (await Data.getMods())[id];
+    }
 
-        Promise.all([wepPromise, modPromise, mefPromise, resPromise]).then(() => {
-            lastUpdated = new Date();
-            resolve();
-        });
-        (async() => {await updateEnemies()})();
-    });
-}
+    static async getMods() {
+        await Data.tryUpdateData_()
+        return Data.modData_;
+    }
 
-function updateWeapons() {
-    return new Promise(function (resolve) {
+    /**
+     *
+     * @param {Weapon} weapon - The weapon type for which compatible mods will be returned.
+     * @param {boolean} removeUselessMods - Whether or not to ignore mods which will not affect the simulation.
+     * @returns {Mod[]} - A list of mods which are compatible with this weapon.
+     */
+    static async getValidModsFor(weapon, removeUselessMods=true) {
+        /** @type Mod[] */
+        let validMods = Object.values(await Data.getMods())
+            .filter(mod => mod.isCompatibleWithWeapon(weapon)); // include only mods compatible with the weapon
+
+        if (removeUselessMods) {
+            // include only mods with "useful" effects
+            let usefulEffects = usefulModEffectTypes();
+            validMods = validMods
+                .filter(mod => usefulEffects.some(effect => Array.from(mod.getEffects().keys()).includes(effect)));
+        }
+
+        return validMods;
+    }
+
+    /**
+     * Returns a health type from its ID.
+     * @param id
+     * @returns {Promise<ResistanceType>}
+     */
+    static async getHealthType(id) {
+        return (await Data.getHealthTypes())[id];
+    }
+
+    static async getHealthTypes() {
+        await Data.tryUpdateData_()
+        return Data.healthTypeData_;
+    }
+
+    /**
+     * Returns an armor type from its ID.
+     * @param id
+     * @returns {Promise<ResistanceType>}
+     */
+    static async getArmorType(id) {
+        return (await Data.getArmorTypes())[id];
+    }
+
+    static async getArmorTypes() {
+        await Data.tryUpdateData_()
+        return Data.armorTypeData_;
+    }
+
+    /**
+     * Returns a shield type from its ID.
+     * @param id
+     * @returns {Promise<ResistanceType>}
+     */
+    static async getShieldType(id) {
+        return (await Data.getShieldTypes())[id];
+    }
+
+    static async getShieldTypes() {
+        await Data.tryUpdateData_()
+        return Data.shieldTypeData_;
+    }
+
+    /**
+     * Returns an Enemy from its ID.
+     * @param id
+     * @returns {Promise<Enemy>}
+     */
+    static async getEnemy(id) {
+        return (await Data.getEnemies())[id];
+    }
+
+    static async getEnemies() {
+        await Data.tryUpdateData_()
+        return Data.enemyData_;
+    }
+
+    /**
+     * If the data has not been updated in an hour, fetch the latest changes from the database.
+     */
+    static async tryUpdateData_() {
+        if (Data.lastUpdated_ == null || new Date().getTime() - Data.lastUpdated_.getTime() > 3600000) {
+            await Data.updateData_();
+        }
+    }
+
+    /**
+     * Fetch the latest changes from the database.
+     */
+    static async updateData_() {
+        Data.lastUpdated_ = new Date();
+
+        await Data.updateWeapons_();
+        await Data.updateMods_();
+        await Data.updateModEffects_();
+        await Data.updateResistanceTypes_();
+        await Data.updateEnemies_();
+    }
+
+    static async updateWeapons_() {
         let weapons = {};
-
-        async.parallel([
+        await new Promise((resolve) => {
+            async.parallel([
                 function (callback) {
                     conn.query(
                         `SELECT * FROM weapons w WHERE w.validated = 1 ORDER BY w.name;`,
@@ -203,19 +303,18 @@ function updateWeapons() {
                 }
             ],
             function (err, results) {
-                weaponData = weapons;
                 superconsole.log(superconsole.MessageLevel.INFORMATION,
                     `$blue:Updated weapons as of $white,bright{${new Date().toString()}}`,);
                 resolve();
             });
-    });
-}
+        })
+        Data.weaponData_ = weapons;
+    }
 
-function updateMods() {
-    return new Promise(function (resolve) {
+    static async updateMods_() {
         let mods = {};
-
-        async.parallel([
+        await new Promise((resolve) => {
+            async.parallel([
                 function (callback) {
                     conn.query(
                         `SELECT * FROM mods ORDER BY name;`,
@@ -285,19 +384,18 @@ function updateMods() {
                 }
             ],
             function (err, results) {
-                modData = mods;
                 superconsole.log(superconsole.MessageLevel.INFORMATION,
                     `$blue:Updated mods as of $white,bright{${new Date().toString()}}`,);
                 resolve();
             });
-    });
-}
+        });
+        Data.modData_ = mods;
+    }
 
-function updateModEffects() {
-    return new Promise(function (resolve) {
+    static async updateModEffects_() {
         let modEffects = {};
-
-        async.parallel([
+        await new Promise((resolve) => {
+            async.parallel([
                 function (callback) {
                     conn.query(
                         `SELECT * FROM mod_effect_names;`,
@@ -317,74 +415,21 @@ function updateModEffects() {
                     );
                 }
             ],
-            function (err, results) {
-                modEffectData = modEffects;
+    function (err, results) {
                 superconsole.log(superconsole.MessageLevel.INFORMATION,
                     `$blue:Updated mod effects as of $white,bright{${new Date().toString()}}`,);
                 resolve();
             });
-    });
-}
+        });
+        Data.modEffectData_ = modEffects;
+    }
 
-function updateEnemies() {
-    return new Promise(function (resolve) {
-        let enemies = {};
-
-        async.parallel([
-                function (callback) {
-                    conn.query(
-                        `SELECT * FROM enemies ORDER BY name;`,
-                        async function (err, results) {
-                            if (err) {
-                                superconsole.log(superconsole.MessageLevel.ERROR_DEBUG,
-                                    `$red:Encountered an error: $white,bright{${err}}`);
-                                return;
-                            }
-
-                            for (let r = 0; r < results.length; r++) {
-                                let enemyResult = results[r];
-                                if (enemies[enemyResult.id] == null) {
-                                    enemies[enemyResult.id] = new Enemy();
-                                }
-
-                                /** @type {import('../classes/enemy').Enemy} */
-                                let enemy = enemies[enemyResult.id];
-                                enemy
-                                    .setId(enemyResult.id)
-                                    .setName(enemyResult.name)
-                                    .setImage(enemyResult.image_url)
-                                    .setBaseLevel(enemyResult.base_level)
-                                    .setBaseHealth(enemyResult.health_value)
-                                    .setHealthTypeId(enemyResult.health_type)
-                                    .setBaseArmor(enemyResult.armor_value)
-                                    .setArmorTypeId(enemyResult.armor_type)
-                                    .setBaseShield(enemyResult.shield_value)
-                                    .setShieldTypeId(enemyResult.shield_type);
-                                await enemy.setHealthType();
-                                await enemy.setArmorType();
-                                await enemy.setShieldType();
-                            }
-                            callback(null, 1);
-                        }
-                    );
-                }
-            ],
-            function (err, results) {
-                enemyData = enemies;
-                superconsole.log(superconsole.MessageLevel.INFORMATION,
-                    `$blue:Updated enemies as of $white,bright{${new Date().toString()}}`,);
-                resolve();
-            });
-    });
-}
-
-function updateResistanceTypes() {
-    return new Promise(function (resolve) {
+    static async updateResistanceTypes_() {
         let healthTypes = {};
         let armorTypes = {};
         let shieldTypes = {};
-
-        async.parallel([
+        await new Promise(function (resolve) {
+            async.parallel([
                 function (callback) {
                     conn.query(
                         `SELECT * FROM health_types ORDER BY id;`,
@@ -401,7 +446,7 @@ function updateResistanceTypes() {
                                     healthTypes[healthTypeResult.id] = new ResistanceType();
                                 }
 
-                                /** @type {import('../classes/resistance-type').ResistanceType} */
+                                /** @type {import('../classes/resistanceType').ResistanceType} */
                                 let healthType = healthTypes[healthTypeResult.id];
                                 healthType
                                     .setId(healthTypeResult.id)
@@ -440,7 +485,7 @@ function updateResistanceTypes() {
                                     armorTypes[armorTypeResult.id] = new ResistanceType();
                                 }
 
-                                /** @type {import('../classes/resistance-type').ResistanceType} */
+                                /** @type {import('../classes/resistanceType').ResistanceType} */
                                 let armorType = armorTypes[armorTypeResult.id];
                                 armorType
                                     .setId(armorTypeResult.id)
@@ -479,7 +524,7 @@ function updateResistanceTypes() {
                                     shieldTypes[shieldTypeResult.id] = new ResistanceType();
                                 }
 
-                                /** @type {import('../classes/resistance-type').ResistanceType} */
+                                /** @type {import('../classes/resistanceType').ResistanceType} */
                                 let shieldType = shieldTypes[shieldTypeResult.id];
                                 shieldType
                                     .setId(shieldTypeResult.id)
@@ -502,65 +547,67 @@ function updateResistanceTypes() {
                         }
                     );
                 }
-            ],
+                ],
             function (err, results) {
-                healthTypeData = healthTypes;
-                armorTypeData = armorTypes;
-                shieldTypeData = shieldTypes;
                 superconsole.log(superconsole.MessageLevel.INFORMATION,
                     `$blue:Updated resistance types (health, armor, shield) as of $white,bright{${new Date().toString()}}`,);
                 resolve();
             });
-    });
-}
-
-async function getWeapons() {
-    await tryUpdateData();
-    return weaponData;
-}
-
-async function getMods() {
-    await tryUpdateData();
-    return modData;
-}
-
-async function getModEffects() {
-    await tryUpdateData();
-    return modEffectData;
-}
-
-async function getEnemies() {
-    await tryUpdateData();
-    return enemyData;
-}
-
-async function getHealthTypes() {
-    await tryUpdateData();
-    return healthTypeData;
-}
-
-async function getArmorTypes() {
-    await tryUpdateData();
-    return armorTypeData;
-}
-
-async function getShieldTypes() {
-    await tryUpdateData();
-    return shieldTypeData;
-}
-
-/*class Data {
-    async static updateData() {
-        await tryUpdateData();
+        });
+        Data.healthTypeData_ = healthTypes;
+        Data.armorTypeData_ = armorTypes;
+        Data.shieldTypeData_ = shieldTypes;
     }
-}*/
+
+    static async updateEnemies_() {
+        let enemies = {};
+        await new Promise((resolve) => {
+            async.parallel([
+                function (callback) {
+                    conn.query(
+                        `SELECT * FROM enemies ORDER BY name;`,
+                        async function (err, results) {
+                            if (err) {
+                                superconsole.log(superconsole.MessageLevel.ERROR_DEBUG,
+                                    `$red:Encountered an error: $white,bright{${err}}`);
+                                return;
+                            }
+
+                            for (let r = 0; r < results.length; r++) {
+                                let enemyResult = results[r];
+                                if (enemies[enemyResult.id] == null) {
+                                    enemies[enemyResult.id] = new Enemy();
+                                }
+
+                                /** @type {import('../classes/enemy').Enemy} */
+                                let enemy = enemies[enemyResult.id];
+                                enemy
+                                    .setId(enemyResult.id)
+                                    .setName(enemyResult.name)
+                                    .setImage(enemyResult.image_url)
+                                    .setBaseLevel(enemyResult.base_level)
+                                    .setBaseHealth(enemyResult.health_value)
+                                    .setHealthType(Data.healthTypeData_[enemyResult.health_type])
+                                    .setBaseArmor(enemyResult.armor_value)
+                                    .setArmorType(Data.armorTypeData_[enemyResult.armor_type])
+                                    .setBaseShield(enemyResult.shield_value)
+                                    .setShieldType(Data.shieldTypeData_[enemyResult.shield_type]);
+                            }
+                            callback(null, 1);
+                        }
+                    );
+                }
+            ],
+            function (err, results) {
+                superconsole.log(superconsole.MessageLevel.INFORMATION,
+                    `$blue:Updated enemies as of $white,bright{${new Date().toString()}}`,);
+                resolve();
+            });
+        });
+        Data.enemyData_ = enemies;
+    }
+}
 
 module.exports = {
-    getWeapons,
-    getMods,
-    getModEffects,
-    getEnemies,
-    getHealthTypes,
-    getArmorTypes,
-    getShieldTypes
+    Data,
 }

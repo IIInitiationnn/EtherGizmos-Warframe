@@ -1,6 +1,6 @@
-const {WeaponResiduals} = require('./weapon-residuals');
-const {WeaponDamageDistribution} = require('./weapon-damage-distribution');
-const {replacer, reviver} = require('./map-util');
+const {WeaponResiduals} = require('./weaponResiduals');
+const {WeaponDamageDistribution} = require('./weaponDamageDistribution');
+const {replacer, reviver} = require('../utils/mapUtils');
 
 /**
  * Contains the stats for the firing mode of a weapon.

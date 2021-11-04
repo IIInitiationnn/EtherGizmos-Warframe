@@ -1,24 +1,24 @@
-const {isElement, DamageType} = require('./magic-types');
-const {replacer, reviver} = require('./map-util');
+const {isElement, DAMAGE_TYPE} = require('../utils/magicTypes');
+const {replacer, reviver} = require('../utils/mapUtils');
 
 class WeaponDamageDistribution extends Map {
     constructor() {
         super();
-        this.set(DamageType.IMPACT, 0);
-        this.set(DamageType.PUNCTURE, 0);
-        this.set(DamageType.SLASH, 0);
-        this.set(DamageType.COLD, 0);
-        this.set(DamageType.ELECTRIC, 0);
-        this.set(DamageType.HEAT, 0);
-        this.set(DamageType.TOXIN, 0);
-        this.set(DamageType.BLAST, 0);
-        this.set(DamageType.CORROSIVE, 0);
-        this.set(DamageType.GAS, 0);
-        this.set(DamageType.MAGNETIC, 0);
-        this.set(DamageType.RADIATION, 0);
-        this.set(DamageType.VIRAL, 0);
-        this.set(DamageType.TRUE, 0);
-        this.set(DamageType.VOID, 0);
+        this.set(DAMAGE_TYPE.IMPACT, 0);
+        this.set(DAMAGE_TYPE.PUNCTURE, 0);
+        this.set(DAMAGE_TYPE.SLASH, 0);
+        this.set(DAMAGE_TYPE.COLD, 0);
+        this.set(DAMAGE_TYPE.ELECTRIC, 0);
+        this.set(DAMAGE_TYPE.HEAT, 0);
+        this.set(DAMAGE_TYPE.TOXIN, 0);
+        this.set(DAMAGE_TYPE.BLAST, 0);
+        this.set(DAMAGE_TYPE.CORROSIVE, 0);
+        this.set(DAMAGE_TYPE.GAS, 0);
+        this.set(DAMAGE_TYPE.MAGNETIC, 0);
+        this.set(DAMAGE_TYPE.RADIATION, 0);
+        this.set(DAMAGE_TYPE.VIRAL, 0);
+        this.set(DAMAGE_TYPE.TRUE, 0);
+        this.set(DAMAGE_TYPE.VOID, 0);
     }
 
     /**
@@ -30,7 +30,7 @@ class WeaponDamageDistribution extends Map {
     }
 
     getToxin() {
-        return this.get(DamageType.TOXIN);
+        return this.get(DAMAGE_TYPE.TOXIN);
     }
 
     isZero() {
@@ -47,7 +47,7 @@ class WeaponDamageDistribution extends Map {
     /**
      * Finds all the innate elements (4 primary and 6 secondary) as well as their damage.
      * Key: damage type. Value: damage.
-     * @returns {Map<DamageType, number>}
+     * @returns {Map<DAMAGE_TYPE, number>}
      */
     innateElements() {
         let elements = new Map();
@@ -78,7 +78,7 @@ class WeaponDamageDistribution extends Map {
 
     /**
      * Randomly select status effect(s) using this damage distribution.
-     * @returns {DamageType[]}
+     * @returns {DAMAGE_TYPE[]}
      */
     randomStatus(num = 1) {
         let statuses = [];
@@ -133,7 +133,7 @@ class WeaponDamageDistribution extends Map {
      */
     afterNetArmorResistances(armorType, enemyArmor) {
         // General armor damage reduction = Net Armor / (Net Armor + 300)
-        // so multiplier = 1 - reduction = 300 / (Net Armor + 300)
+        // so multiplier = (1 - reduction) = 300 / (Net Armor + 300)
         let damageAfterResistances = this.clone();
         if (armorType == null || enemyArmor === 0) return damageAfterResistances;
         for (let [damageType, damageValue] of damageAfterResistances.entries()) {
@@ -159,90 +159,141 @@ class WeaponDamageDistribution extends Map {
         return damageAfterResistances;
     }
 
-    afterAllHealthResistances(healthType, armorType, enemyArmor) {
-        let damageAfterResistances = this.afterHealthResistances(healthType);
-        if (enemyArmor !== 0) {
-            return damageAfterResistances
-                .afterArmorTypeResistances(armorType)
-                .afterNetArmorResistances(armorType, enemyArmor);
-        } else {
-            return damageAfterResistances;
-        }
-    }
-
     setImpact(impact) {
-        this.set(DamageType.IMPACT, parseFloat(impact));
+        this.set(DAMAGE_TYPE.IMPACT, parseFloat(impact));
         return this;
     }
 
     setPuncture(puncture) {
-        this.set(DamageType.PUNCTURE, parseFloat(puncture));
+        this.set(DAMAGE_TYPE.PUNCTURE, parseFloat(puncture));
         return this;
     }
 
     setSlash(slash) {
-        this.set(DamageType.SLASH, parseFloat(slash));
+        this.set(DAMAGE_TYPE.SLASH, parseFloat(slash));
         return this;
     }
 
     setCold(cold) {
-        this.set(DamageType.COLD, parseFloat(cold));
+        this.set(DAMAGE_TYPE.COLD, parseFloat(cold));
         return this;
     }
 
     setElectric(electric) {
-        this.set(DamageType.ELECTRIC, parseFloat(electric));
+        this.set(DAMAGE_TYPE.ELECTRIC, parseFloat(electric));
         return this;
     }
 
     setHeat(heat) {
-        this.set(DamageType.HEAT, parseFloat(heat));
+        this.set(DAMAGE_TYPE.HEAT, parseFloat(heat));
         return this;
     }
 
     setToxin(toxin) {
-        this.set(DamageType.TOXIN, parseFloat(toxin));
+        this.set(DAMAGE_TYPE.TOXIN, parseFloat(toxin));
         return this;
     }
 
     setBlast(blast) {
-        this.set(DamageType.BLAST, parseFloat(blast));
+        this.set(DAMAGE_TYPE.BLAST, parseFloat(blast));
         return this;
     }
 
     setCorrosive(corrosive) {
-        this.set(DamageType.CORROSIVE, parseFloat(corrosive));
+        this.set(DAMAGE_TYPE.CORROSIVE, parseFloat(corrosive));
         return this;
     }
 
     setGas(gas) {
-        this.set(DamageType.GAS, parseFloat(gas));
+        this.set(DAMAGE_TYPE.GAS, parseFloat(gas));
         return this;
     }
 
     setMagnetic(magnetic) {
-        this.set(DamageType.MAGNETIC, parseFloat(magnetic));
+        this.set(DAMAGE_TYPE.MAGNETIC, parseFloat(magnetic));
         return this;
     }
 
     setRadiation(radiation) {
-        this.set(DamageType.RADIATION, parseFloat(radiation));
+        this.set(DAMAGE_TYPE.RADIATION, parseFloat(radiation));
         return this;
     }
 
     setViral(viral) {
-        this.set(DamageType.VIRAL, parseFloat(viral));
+        this.set(DAMAGE_TYPE.VIRAL, parseFloat(viral));
         return this;
     }
 
     setTrue(trueD) {
-        this.set(DamageType.TRUE, parseFloat(trueD));
+        this.set(DAMAGE_TYPE.TRUE, parseFloat(trueD));
         return this;
     }
 
     setVoid(voidD) {
-        this.set(DamageType.VOID, parseFloat(voidD));
+        this.set(DAMAGE_TYPE.VOID, parseFloat(voidD));
         return this;
+    }
+
+    /**
+     * Sum a list of damage distributions into once distribution
+     * @param {WeaponDamageDistribution[]} weaponDamageDistributions
+     * @returns {WeaponDamageDistribution} - Sum of all the damage distributions
+     */
+    static coalesce(weaponDamageDistributions) {
+        let sum = new WeaponDamageDistribution();
+        for (let dmgDist of weaponDamageDistributions) {
+            for (let [damageType, damageValue] of dmgDist.entries()) {
+                sum.add(damageType, damageValue);
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * Precalculate distributions accounting for health, armor and shield resistances.
+     * Significantly reduces simulation execution time.
+     * @param {WeaponDamageDistribution} damageDistribution
+     * @param {Enemy} enemy
+     * @returns {Map<String, WeaponDamageDistribution> | Map<String, Map<number, WeaponDamageDistribution>>}
+     */
+    static precalculate(damageDistribution, enemy) {
+        let dmgDists = new Map();
+        dmgDists.set('noModifiers', damageDistribution);
+        dmgDists.set('afterHealth', damageDistribution.afterHealthResistances(enemy.getHealthType()));
+        dmgDists.set('afterArmorType+Health', dmgDists.get('afterHealth').afterArmorTypeResistances(enemy.getArmorType()));
+        dmgDists.set('afterShield', damageDistribution.afterShieldResistances(enemy.getShieldType()));
+
+        dmgDists.set('armoredHealthCache', new Map());
+        return dmgDists;
+    }
+
+    /**
+     *
+     * @param distributions
+     * @param {EnemyInstance} enemyInstance
+     * @param {boolean} isShieldDamage - If the damage distribution is to be dealt to shields.
+     * @returns {WeaponDamageDistribution}
+     */
+    static fromEnemyState(distributions, enemyInstance, isShieldDamage) {
+        if (enemyInstance.hasShields() && isShieldDamage) {
+            return distributions.get('afterShield');
+        } else {
+            if (enemyInstance.hasArmor()) {
+                let cache = distributions.get('armoredHealthCache');
+
+                let cachedArmor = cache.get(enemyInstance.getArmor());
+                if (cachedArmor === undefined) {
+                    let dmg = distributions.get('afterArmorType+Health')
+                        .afterNetArmorResistances(enemyInstance.getEnemy().getArmorType(), enemyInstance.getArmor())
+                    cache.set(enemyInstance.getArmor(), dmg);
+                    return dmg;
+                } else {
+                    return cachedArmor;
+                }
+            } else {
+                return distributions.get('afterHealth')
+            }
+        }
     }
 
 }

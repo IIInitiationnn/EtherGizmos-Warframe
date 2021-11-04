@@ -1,90 +1,118 @@
+const {BuildUtils} = require('../utils/buildUtils');
+
 class Metrics {
     constructor() {
-        this.killTime = 0;
-        this.shotsFired = 0;
-        this.pelletsFired = 0;
-        this.hits = 0;
-        this.headshots = 0;
-        this.headCrits = 0;
-        this.reloads = 0;
-        this.procs = []; // TODO remove, just temp
+        /** @private {number} */
+        this.killTime_ = 0;
+
+        /** @private {number} */
+        this.shotsFired_ = 0;
+
+        /** @private {number} */
+        this.shotsLanded_ = 0;
+
+        /** @private {number} */
+        this.pelletsFired_ = 0;
+
+        /** @private {number} */
+        this.pelletsLanded_ = 0;
+
+        /** @private {number} */
+        this.headshots_ = 0;
+
+        /** @private {number} */
+        this.headCrits_ = 0;
+
+        /** @private {number} */
+        this.reloads_ = 0;
+
+        /** @private {number[]} - See DamageType */
+        this.procs_ = [];
     }
 
-    // TODO remove, just temp
-    addProcs(procs) {
-        this.procs.push(...procs);
-    }
-
+    /**
+     * @returns {number}
+     */
     getKillTime() {
-        return this.killTime;
-    }
-
-    setKillTime(value) {
-        this.killTime = value;
-        return this;
+        return this.killTime_;
     }
 
     getShotsFired() {
-        return this.shotsFired;
+        return this.shotsFired_;
     }
 
-    addShotsFired(shotsFired) {
-        this.shotsFired += shotsFired;
-        return this;
-    }
-
-    setShotsFired(shotsFired) {
-        this.shotsFired = shotsFired;
-        return this;
+    getShotsLanded() {
+        return this.shotsLanded_;
     }
 
     getPelletsFired() {
-        return this.pelletsFired;
+        return this.pelletsFired_;
     }
 
-    addPelletsFired(pelletsFired) {
-        this.pelletsFired += pelletsFired;
-        return this;
-    }
-
-    setPelletsFired(pelletsFired) {
-        this.pelletsFired = pelletsFired;
-        return this;
-    }
-
-    getHits() {
-        return this.hits;
-    }
-
-    setHits(hits) {
-        this.hits = hits;
-        return this;
+    getPelletsLanded() {
+        return this.pelletsLanded_;
     }
 
     getHeadshots() {
-        return this.headshots;
-    }
-
-    setHeadshots(headshots) {
-        this.headshots = headshots;
-        return this;
+        return this.headshots_;
     }
 
     getHeadCrits() {
-        return this.headCrits;
-    }
-
-    setHeadCrits(headCrits) {
-        this.headCrits = headCrits;
-        return this;
+        return this.headCrits_;
     }
 
     getReloads() {
-        return this.reloads;
+        return this.reloads_;
     }
 
-    setReloads(reloads) {
-        this.reloads = reloads;
+    setKillTime(killTime) {
+        this.killTime_ = killTime;
+        return this;
+    }
+
+    addShotsFired(shotsFired) {
+        this.shotsFired_ += shotsFired;
+        return this;
+    }
+
+    addShotsLanded(shotsLanded) {
+        this.shotsLanded_ += shotsLanded;
+        return this;
+    }
+
+    addPelletsFired(pelletsFired) {
+        this.pelletsFired_ += pelletsFired;
+        return this;
+    }
+
+    addPelletsLanded(pelletsLanded) {
+        this.pelletsLanded_ += pelletsLanded;
+        return this;
+    }
+
+    addHeadshots(headshots) {
+        this.headshots_ += headshots;
+        return this;
+    }
+
+    addHeadCrits(headCrits) {
+        this.headCrits_ += headCrits;
+        return this;
+    }
+
+    addReload() {
+        this.reloads_ += 1;
+        return this;
+    }
+
+    /**
+     * @param {Proc[]} procs
+     * @returns {Metrics}
+     */
+    addProcs(procs) {
+        for (let proc of procs) {
+            this.procs_.push(proc.getType());
+        }
         return this;
     }
 
@@ -94,9 +122,7 @@ class Metrics {
      * @returns {number} - Average kill time.
      */
     static meanKillTime(metrics) {
-        let total = 0;
-        for (let metric of metrics) total += metric.killTime;
-        return total / metrics.length;
+        return BuildUtils.average(metrics.map(metric => metric.getKillTime()));
     }
 
 }
